@@ -3,6 +3,9 @@ from torch.utils.data import Dataset
 import os
 from skimage import io
 from torchvision import transforms
+from natsort import natsorted
+import torch
+import numpy as np
 
 
 class Data(Dataset):
@@ -18,7 +21,7 @@ class Data(Dataset):
             num_objects = int(len(row_data) / 6)
             for i in range(num_objects):
                 self.data['index'].append(index)
-                self.data['coordinates'].append([row_data[num_objects * 2 + i * 4], row_data[num_objects * 2 + i * 4 + 1], row_data[num_objects * 2 + i * 4 + 2], row_data[num_objects * 2 + i * 4 + 3]])
+                self.data['coordinates'].append([float(row_data[num_objects * 2 + i * 4]), float(row_data[num_objects * 2 + i * 4 + 1]), float(row_data[num_objects * 2 + i * 4 + 2]), float(row_data[num_objects * 2 + i * 4 + 3])])
                 self.data['labels'].append(int(row_data[i * 2 + 1]))
 
         self.img_dir = img_dir
@@ -31,27 +34,16 @@ class Data(Dataset):
 
 
     def __len__(self):
-        return len(self.data)
+        return len(self.data['index'])
 
 
     def __getitem__(self, idx):
-        indices = self.data['index'][idx]
+        index = self.data['index'][idx]
 
-        frames = []
-        try:
-            for index in indices:
-                image_folder = os.path.join(self.img_dir, str(index + 1))
-                image_paths = os.listdir(image_folder)
-                image_paths = [os.path.join(image_folder, i) for i in image_paths]
-                images = [self.transform(io.imread(i)) for i in image_paths]
-                frames.append(images)
-        except TypeError:
-            image_folder = os.path.join(self.img_dir, str(indices + 1))
-            image_paths = os.listdir(image_folder)
-            image_paths = [os.path.join(image_folder, i) for i in image_paths]
-            images = [self.transform(io.imread(i)) for i in image_paths]
-            frames.append(images)
+        image_folder = os.path.join(self.img_dir, str(index + 1))
+        image_paths = os.listdir(image_folder)
+        image_paths = natsorted(image_paths)
+        image_paths = [os.path.join(image_folder, i) for i in image_paths]
+        images = [self.transform(io.imread(i)) for i in image_paths]
 
-        sample = {'frames': frames, 'coordinates': self.data['coordinates'][idx], 'labels': self.data['labels'][idx]}
-
-        return sample
+        return images, self.data['coordinates'][idx], self.data['labels'][idx]

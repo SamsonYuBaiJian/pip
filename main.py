@@ -3,6 +3,7 @@ import torch
 from dataloader import Data
 from model import Model
 from torch.utils.data import DataLoader
+import numpy as np
 
 
 def main(task, num_epoch, batch_size):
@@ -11,22 +12,29 @@ def main(task, num_epoch, batch_size):
 
     model = Model()
     bce_logits_loss = nn.BCEWithLogitsLoss()
-    mse_loss = nn.MSELoss()
+    # TODO: add MSE loss for generated images
+    # mse_loss = nn.MSELoss()
     optimizer = torch.optim.Adam(model.parameters(), lr=0.001)
 
     model.train()
-    for _ in range(num_epoch):
+    # train_loss_per_epoch = []
+    for i in range(num_epoch):
+        temp_train_loss = []
         for batch in train_dataloader:
-            frames, coordinates, labels = batch['frames'], batch['coordinates'], batch['labels']
-            print(len(frames), coordinates, labels)
+            frames, coordinates, labels = batch
+            coordinates = torch.stack(coordinates)
+            # print(coordinates)
             preds = model(task, coordinates, frames)
+            labels = torch.unsqueeze(labels, dim=1).type_as(preds)
             loss = bce_logits_loss(preds, labels) # + mse_loss()
-            # graftnet_classify_train_loss_epoch.append(graftnet_loss.data.item())
+            temp_train_loss.append(loss.data.item())
             model.zero_grad()
             optimizer.zero_grad()
             loss.backward()
-            # torch.nn.utils.clip_grad_norm_(graftnet.parameters(), gradient_clip)
             optimizer.step()
+        
+        print("Epoch {} train loss =".format(i+1), sum(temp_train_loss) / len(temp_train_loss))
+        # train_loss_per_epoch.append(sum(temp_train_loss) / len(temp_train_loss))
 
 
 if __name__ == '__main__':
