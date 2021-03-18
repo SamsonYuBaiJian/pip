@@ -16,9 +16,9 @@ class Model(nn.Module):
         # LSTM
         self.lstm_cell = nn.LSTMCell(5488, 256)
 
-        # decoder
-        self.t_conv1 = nn.ConvTranspose2d(4, 16, 2, stride=2)
-        self.t_conv2 = nn.ConvTranspose2d(16, 3, 2, stride=2)
+        # # decoder
+        # self.t_conv1 = nn.ConvTranspose2d(4, 16, 2, stride=2)
+        # self.t_conv2 = nn.ConvTranspose2d(16, 3, 2, stride=2)
 
         # task agnostic FC layer
         self.fc = nn.Linear(256 + 4, 64)
