@@ -20,4 +20,4 @@ def convert_avi_to_frame(source_folder, target_folder):
             success, image = video_cap.read()
             count += 1
 
-# convert_avi_to_frame('/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/dataset/contact/videos', '/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/dataset/contact/frames')
+convert_avi_to_frame('/nfs/home3/acct2011_02/CLEVEREST/dataset/dataset/contact/videos', '/nfs/home3/acct2011_02/CLEVEREST/dataset/dataset/contact/frames')

@@ -40,8 +40,8 @@ class Model(nn.Module):
         sequence_len = len(images)
         batch_size = images[0].shape[0]
 
-        hx = torch.randn(batch_size, 256)
-        cx = torch.randn(batch_size, 256)
+        hx = torch.randn(batch_size, 256).to(device)
+        cx = torch.randn(batch_size, 256).to(device)
         for i in range(sequence_len):
             # encoder frame features
             image = images[i].to(device)

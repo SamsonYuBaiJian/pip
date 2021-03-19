@@ -4,10 +4,11 @@ from dataloader import Data
 from model import Model
 from torch.utils.data import DataLoader
 import numpy as np
+from tqdm import tqdm
 
 
 def main(task, num_epoch, batch_size):
-    train_dataset = Data('/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/dataset/contact/labels.csv', '/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/dataset/contact/frames')
+    train_dataset = Data('/nfs/home3/acct2011_02/CLEVEREST/dataset/dataset/contact/labels.csv', '/nfs/home3/acct2011_02/CLEVEREST/dataset/dataset/contact/frames')
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
@@ -30,7 +31,7 @@ def main(task, num_epoch, batch_size):
     train_loss_per_epoch = []
     for i in range(num_epoch):
         temp_train_loss = []
-        for j, batch in enumerate(train_dataloader):
+        for j, batch in tqdm(enumerate(train_dataloader)):
             frames, coordinates, labels = batch
             coordinates = torch.stack(coordinates).T.to(device)
             preds = model(task, coordinates, frames, device)
@@ -52,6 +53,6 @@ def main(task, num_epoch, batch_size):
 
 if __name__ == '__main__':
     num_epoch = 10
-    batch_size = 6
+    batch_size = 8
 
     main('contact', num_epoch, batch_size)
