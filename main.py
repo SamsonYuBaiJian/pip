@@ -10,7 +10,8 @@ def main(task, num_epoch, batch_size):
     train_dataset = Data('/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/dataset/contact/labels.csv', '/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/dataset/contact/frames')
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
 
-    model = Model()
+    device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+    model = Model().to(device)
     # turn off gradients for other tasks
     tasks = ['contact', 'contain', 'stability']
     for i in tasks:
@@ -20,7 +21,7 @@ def main(task, num_epoch, batch_size):
                     p.requires_grad = False
 
     optimizer = torch.optim.Adam(model.parameters(), lr=0.01)
-    bce_logits_loss = nn.BCEWithLogitsLoss()
+    bce_logits_loss = nn.BCEWithLogitsLoss().to(device)
     # TODO: add MSE loss for generated images
     # mse_loss = nn.MSELoss()
 
@@ -31,8 +32,8 @@ def main(task, num_epoch, batch_size):
         temp_train_loss = []
         for j, batch in enumerate(train_dataloader):
             frames, coordinates, labels = batch
-            coordinates = torch.stack(coordinates).T
-            preds = model(task, coordinates, frames)
+            coordinates = torch.stack(coordinates).T.to(device)
+            preds = model(task, coordinates, frames, device)
             labels = torch.unsqueeze(labels, dim=1).type_as(preds)
             loss = bce_logits_loss(preds, labels) # + mse_loss()
             temp_train_loss.append(loss.data.item())

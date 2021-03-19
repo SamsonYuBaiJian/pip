@@ -29,7 +29,7 @@ class Model(nn.Module):
         self.stability = nn.Linear(64, 1)
 
 
-    def forward(self, task, coordinates, images):
+    def forward(self, task, coordinates, images, device):
         if task == 'contact':
             self.task_fc = self.contact
         elif task == 'contain':
@@ -39,11 +39,13 @@ class Model(nn.Module):
 
         sequence_len = len(images)
         batch_size = images[0].shape[0]
+
         hx = torch.randn(batch_size, 256)
         cx = torch.randn(batch_size, 256)
         for i in range(sequence_len):
             # encoder frame features
-            x = torch.relu(self.conv1(images[i]))
+            image = images[i].to(device)
+            x = torch.relu(self.conv1(image))
             x = self.pool(x)
             x = torch.relu(self.conv2(x))
             x = self.pool(x)
