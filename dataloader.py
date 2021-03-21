@@ -27,7 +27,7 @@ class Data(Dataset):
         self.img_dir = img_dir
         self.transform = transforms.Compose([
             transforms.ToPILImage(),
-            transforms.Resize(224),
+            transforms.Resize((256, 256)),
             # transforms.CenterCrop(),
             transforms.ToTensor(),
         ])
@@ -43,6 +43,7 @@ class Data(Dataset):
         image_folder = os.path.join(self.img_dir, str(index + 1))
         image_paths = os.listdir(image_folder)
         image_paths = natsorted(image_paths)
+        # TODO: add image interval option
         image_paths = [os.path.join(image_folder, i) for i in image_paths]
         images = [self.transform(io.imread(i)) for i in image_paths]
 
