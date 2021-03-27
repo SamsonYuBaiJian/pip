@@ -63,6 +63,10 @@ def main(task, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynami
                 image_mse_loss = mse_loss(pred_images, frames_k)
                 temp_train_mse_loss.append(image_mse_loss.data.item())
                 loss += image_mse_loss
+            if teacher_forcing_batch[0]:
+                print("Saved new frame sequences WITH teacher forcing.")
+            else:
+                print("Saved new frame sequences WITHOUT teacher forcing.")
             model.zero_grad()
             optimizer.zero_grad()
             loss.backward()
