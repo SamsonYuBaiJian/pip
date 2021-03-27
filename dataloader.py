@@ -11,7 +11,7 @@ import numpy as np
 class Data(Dataset):
     def __init__(self, csv_file, img_dir, frame_interval):
         self.data = {'index': [], 'coordinates': [], 'labels': []}
-        df = pd.read_csv(csv_file, header=None, names=range(18))
+        df = pd.read_csv(csv_file)
         for row in df.itertuples():
             # gets rid of NaN values
             row_data = [i for i in row if i == i]
