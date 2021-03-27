@@ -8,3 +8,4 @@
 - [X] Add MSE loss for generated images
 - [X] Add skip connections
 - [ ] Vary teacher forcing
+- [ ] Add first few teacher forced frames for dynamics learning

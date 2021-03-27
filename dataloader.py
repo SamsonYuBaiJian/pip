@@ -9,7 +9,7 @@ import numpy as np
 
 
 class Data(Dataset):
-    def __init__(self, csv_file, img_dir):
+    def __init__(self, csv_file, img_dir, frame_interval):
         self.data = {'index': [], 'coordinates': [], 'labels': []}
         df = pd.read_csv(csv_file)
         for row in df.itertuples():
@@ -31,6 +31,7 @@ class Data(Dataset):
             # transforms.CenterCrop(),
             transforms.ToTensor(),
         ])
+        self.frame_interval = frame_interval
 
 
     def __len__(self):
@@ -43,8 +44,10 @@ class Data(Dataset):
         image_folder = os.path.join(self.img_dir, str(index + 1))
         image_paths = os.listdir(image_folder)
         image_paths = natsorted(image_paths)
-        # TODO: add image interval option
-        image_paths = [os.path.join(image_folder, i) for i in image_paths]
+        # frame interval
+        image_paths = [os.path.join(image_folder, image_paths[i]) for i in range(len(image_paths)) if i % self.frame_interval == 0]
+        assert len(image_paths) > 0
+        print(image_paths)
         images = [self.transform(io.imread(i)) for i in image_paths]
 
         return images, self.data['coordinates'][idx], self.data['labels'][idx]

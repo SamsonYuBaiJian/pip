@@ -32,15 +32,28 @@ class Model(nn.Module):
         self.stability = nn.Linear(128, 1)
 
 
-    def forward(self, task, coordinates, images, device):
+    def forward(self, task, coordinates, images, teacher_forcing_batch, first_n_frame_dynamics, device):
         sequence_len = len(images)
         batch_size = images[0].shape[0]
         decoded_images = []
 
         for i in range(sequence_len):
+            # let first n frames be for the model to learn initial dynamics
+            if i < first_n_frame_dynamics:
+                images_i = images[i].to(device)
+            else:
+                images_i = torch.zeros_like(images[i])
+                for j in range(batch_size):
+                    # teacher forcing
+                    if teacher_forcing_batch[j]:
+                        images_i[j] = images[i][j]
+                    # no teacher forcing, use outputs from previous timestep
+                    else:
+                        images_i[j] = decoded_x[j]
+                images_i = images_i.to(device)
+
             # encode frames
-            image = images[i].to(device)
-            conv1_feat = torch.relu(self.conv1(image))
+            conv1_feat = torch.relu(self.conv1(images_i))
             conv2_feat = torch.relu(self.conv2(conv1_feat))
             conv3_feat = torch.relu(self.conv3(conv2_feat))
             flattened = self.flatten(conv3_feat)
@@ -62,6 +75,7 @@ class Model(nn.Module):
         
         x = torch.relu(self.fc(hx2))
         # add coordinate conditioning for object identification/tracking
+        coordinates = torch.stack(coordinates).T.to(device)
         x = torch.cat([x, coordinates.type_as(x)], dim=1)
         if task == 'contact':
             out = self.contact(x)
