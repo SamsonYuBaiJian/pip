@@ -47,7 +47,6 @@ class Data(Dataset):
         # frame interval
         image_paths = [os.path.join(image_folder, image_paths[i]) for i in range(len(image_paths)) if i % self.frame_interval == 0]
         assert len(image_paths) > 0
-        print(image_paths)
         images = [self.transform(io.imread(i)) for i in image_paths]
 
         return images, self.data['coordinates'][idx], self.data['labels'][idx]
