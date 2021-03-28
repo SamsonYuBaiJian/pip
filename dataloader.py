@@ -9,19 +9,20 @@ import numpy as np
 
 
 class Data(Dataset):
-    def __init__(self, csv_file, img_dir, frame_interval):
+    def __init__(self, csv_file, img_dir, frame_interval, task_type):
         self.data = {'index': [], 'coordinates': [], 'labels': []}
         df = pd.read_csv(csv_file)
         for row in df.itertuples():
             # gets rid of NaN values
             row_data = [i for i in row if i == i]
-            # each object has 6 data values
             index = int(row_data[0])
             row_data = row_data[1:]
-            num_objects = int(len(row_data) / 6)
+            if task_type == 'contact':
+                num_objects = int(len(row_data) / 6)
             for i in range(num_objects):
                 self.data['index'].append(index)
-                self.data['coordinates'].append([float(row_data[num_objects * 2 + i * 4]), float(row_data[num_objects * 2 + i * 4 + 1]), float(row_data[num_objects * 2 + i * 4 + 2]), float(row_data[num_objects * 2 + i * 4 + 3])])
+                if task_type == 'contact':
+                    self.data['coordinates'].append([float(row_data[num_objects * 2 + i * 4]), float(row_data[num_objects * 2 + i * 4 + 1]), float(row_data[num_objects * 2 + i * 4 + 2]), float(row_data[num_objects * 2 + i * 4 + 3])])
                 self.data['labels'].append(int(row_data[i * 2 + 1]))
 
         self.img_dir = img_dir

@@ -18,16 +18,16 @@ os.makedirs(pred_test_img_dir, exist_ok=True)
 os.makedirs(real_test_img_dir, exist_ok=True)
 
 
-def main(task, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval):
-    train_dataset = Data('/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/dataset/contact/labels.csv', '/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/dataset/contact/frames', frame_interval)
+def main(task_type, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval):
+    train_dataset = Data('/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/dataset/contact/labels.csv', '/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/dataset/contact/frames', frame_interval, task_type)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = Model().to(device)
+    model = Model(first_n_frame_dynamics).to(device)
     # turn off gradients for other tasks
     tasks = ['contact', 'contain', 'stability']
     for i in tasks:
-        if i != task:
+        if i != task_type:
             for n, p in model.named_parameters():
                 if i in n:
                     p.requires_grad = False
@@ -47,19 +47,24 @@ def main(task, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynami
             frames, coordinates, labels = batch
             retrieved_batch_size = len(frames[0])
             teacher_forcing_batch = random.choices(population=[True, False], weights=[teacher_forcing_prob, 1-teacher_forcing_prob], k=retrieved_batch_size)
-            pred_labels, pred_images_seq = model(task, coordinates, frames, teacher_forcing_batch, first_n_frame_dynamics, device)
+            pred_labels, pred_images_seq = model(task_type, coordinates, frames, teacher_forcing_batch, first_n_frame_dynamics, device)
             labels = torch.unsqueeze(labels, dim=1).type_as(pred_labels)
             bce_loss = bce_logits_loss(pred_labels, labels)
             temp_train_bce_loss.append(bce_loss.data.item())
             loss = bce_loss
-            frames = frames[1:]
+
+            # NOTE: save generated images for testing
+            for k in range(first_n_frame_dynamics+1):
+                save_image(frames[k][0], os.path.join(pred_test_img_dir, '{}.png'.format(k)))
+                save_image(frames[k][0], os.path.join(real_test_img_dir, '{}.png'.format(k)))
+
             for k, pred_images in enumerate(pred_images_seq[:-1]):
 
                 # NOTE: save generated images for testing
-                save_image(pred_images[0], os.path.join(pred_test_img_dir, '{}.png'.format(k+1)))
-                save_image(frames[k][0], os.path.join(real_test_img_dir, '{}.png'.format(k+1)))
+                save_image(pred_images[0], os.path.join(pred_test_img_dir, '{}.png'.format(k+first_n_frame_dynamics+1)))
+                save_image(frames[k+first_n_frame_dynamics+1][0], os.path.join(real_test_img_dir, '{}.png'.format(k+first_n_frame_dynamics+1)))
                 
-                frames_k = frames[k].to(device)
+                frames_k = frames[k+first_n_frame_dynamics+1].to(device)
                 image_mse_loss = mse_loss(pred_images, frames_k)
                 temp_train_mse_loss.append(image_mse_loss.data.item())
                 loss += image_mse_loss
@@ -83,6 +88,7 @@ def main(task, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynami
 
 
 if __name__ == '__main__':
+    task_type = 'contact'
     num_epoch = 10
     batch_size = 2
     teacher_forcing_prob = 0.5
@@ -92,4 +98,4 @@ if __name__ == '__main__':
     assert teacher_forcing_prob >= 0 and teacher_forcing_prob <= 1
     assert frame_interval > 0 and type(frame_interval) == int
 
-    main('contact', num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval)
+    main(task_type, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval)
