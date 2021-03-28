@@ -90,12 +90,13 @@ def main(task_type, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_d
 if __name__ == '__main__':
     task_type = 'contact'
     num_epoch = 10
-    batch_size = 2
+    batch_size = 8
     teacher_forcing_prob = 0.5
     first_n_frame_dynamics = 5
     frame_interval = 2
 
     assert teacher_forcing_prob >= 0 and teacher_forcing_prob <= 1
+    assert first_n_frame_dynamics >= 0 and type(first_n_frame_dynamics) == int
     assert frame_interval > 0 and type(frame_interval) == int
 
     main(task_type, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval)

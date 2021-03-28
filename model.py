@@ -39,12 +39,12 @@ class Model(nn.Module):
         assert first_n_frame_dynamics < sequence_len
 
         # stack first n frames into input for model to learn initial dynamics
-        first_images_i = torch.zeros(batch_size, channels * (first_n_frame_dynamics + 1), height, width)
+        first_n_images_i = torch.zeros(batch_size, channels * (first_n_frame_dynamics + 1), height, width)
         for i in range(first_n_frame_dynamics):
-            first_images_i[:,i*channels:(i+1)*channels,:,:] = images[i]
+            first_n_images_i[:,i*channels:(i+1)*channels,:,:] = images[i]
 
         for i in range(first_n_frame_dynamics, sequence_len):
-            images_i = first_images_i.clone()
+            images_i = first_n_images_i.clone()
             if i == first_n_frame_dynamics:
                 images_i[:,first_n_frame_dynamics*channels:,:,:] = images[i]
             elif i > first_n_frame_dynamics:
