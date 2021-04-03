@@ -15,14 +15,6 @@ import os
 import pandas as pd
 
 
-# NOTE: save generated images for testing
-test_img_dir = '/mnt/c/Users/samso/Desktop/test/'
-pred_test_img_dir = os.path.join(test_img_dir, 'pred')
-real_test_img_dir = os.path.join(test_img_dir, 'real')
-os.makedirs(pred_test_img_dir, exist_ok=True)
-os.makedirs(real_test_img_dir, exist_ok=True)
-
-
 def main(cfg, task_type, frame_path, label_path, save_stats_path, save_generated_images_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, discriminator_window, learning_rate, train_val_split):
     # get experiment ID
     experiment_id = datetime.datetime.now().strftime('%Y-%m-%d %H-%M-%S')

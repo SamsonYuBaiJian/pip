@@ -1,4 +1,7 @@
 # CLEVEREST
+## Running
+`python main.py --config_file config.yml`
+
 ## Tasks
 - [X] Data processing
 - [X] Build basic model

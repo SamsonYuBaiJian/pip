@@ -1,8 +1,8 @@
 task_type: 'contact'
 frame_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/dataset/contact/frames"
 label_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/dataset/contact/labels.csv"
-save_stats_path: "experiments/"
-save_generated_images_path: '/mnt/c/Users/samso/Desktop/test/'
+save_stats_path: "experiments"
+save_generated_images_path: '/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/generations'
 
 # hyperparameters
 num_epoch: 10

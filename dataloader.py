@@ -4,7 +4,6 @@ import os
 from skimage import io
 from torchvision import transforms
 from natsort import natsorted
-import torch
 import numpy as np
 
 
