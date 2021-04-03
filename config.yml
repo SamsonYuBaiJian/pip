@@ -1,7 +1,8 @@
 task_type: 'contact'
 frame_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/dataset/contact/frames"
 label_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/dataset/contact/labels.csv"
-save_path : "experiments/"
+save_stats_path: "experiments/"
+save_generated_images_path: '/mnt/c/Users/samso/Desktop/test/'
 
 # hyperparameters
 num_epoch: 10
@@ -11,3 +12,4 @@ first_n_frame_dynamics: 5
 frame_interval: 2
 discriminator_window: 3
 learning_rate: 0.001
+train_val_split: 0.8

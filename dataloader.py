@@ -9,13 +9,15 @@ import numpy as np
 
 
 class Data(Dataset):
-    def __init__(self, img_dir, csv_file, frame_interval, task_type):
+    def __init__(self, img_dir, csv_file, indices, frame_interval, task_type):
         self.data = {'index': [], 'coordinates': [], 'labels': []}
         df = pd.read_csv(csv_file)
         for row in df.itertuples():
             # gets rid of NaN values
             row_data = [i for i in row if i == i]
             index = int(row_data[0])
+            if index not in indices:
+                continue
             row_data = row_data[1:]
             if task_type == 'contact':
                 col_per_obj = 6
