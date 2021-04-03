@@ -2,9 +2,9 @@ import torch
 import torch.nn as nn
 
 
-class Model(nn.Module):
+class Generator(nn.Module):
     def __init__(self, first_n_frame_dynamics):
-        super(Model, self).__init__()
+        super(Generator, self).__init__()
 
         # encoder
         self.conv1 = nn.Conv2d(3 * (first_n_frame_dynamics + 1), 16, 3, stride=2, padding=1)
@@ -93,5 +93,11 @@ class Model(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self):
+    def __init__(self, discriminator_window):
+        super(Discriminator, self).__init__()
+
+        self.conv1 = nn.Conv2d(3 * discriminator_window, 16, 3)
+        self.conv2 = nn.Conv2d(16, 32, 3)
+
+    def forward(self):
         pass

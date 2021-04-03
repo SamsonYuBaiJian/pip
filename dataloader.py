@@ -9,7 +9,7 @@ import numpy as np
 
 
 class Data(Dataset):
-    def __init__(self, csv_file, img_dir, frame_interval, task_type):
+    def __init__(self, img_dir, csv_file, frame_interval, task_type):
         self.data = {'index': [], 'coordinates': [], 'labels': []}
         df = pd.read_csv(csv_file)
         for row in df.itertuples():
@@ -23,8 +23,6 @@ class Data(Dataset):
                 col_per_obj = 4
             elif task_type == 'stability':
                 col_per_obj = 5
-            else:
-                assert False, "Is your task_type contact, contain or stability?"
             num_objects = int(len(row_data) / col_per_obj)
             for i in range(num_objects):
                 self.data['index'].append(index)

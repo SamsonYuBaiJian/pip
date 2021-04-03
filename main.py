@@ -1,17 +1,20 @@
 import torch.nn as nn
 import torch
 from dataloader import Data
-from model import Model
+from model import Discriminator, Generator
 from torch.utils.data import DataLoader
 import numpy as np
 from tqdm import tqdm
 from torchvision.utils import save_image
 import random
 from piqa import SSIM, PSNR, MS_SSIM
+import yaml
+import argparse
+import datetime
+import os
 
 
 # NOTE: save generated images for testing
-import os
 test_img_dir = '/mnt/c/Users/samso/Desktop/test/'
 pred_test_img_dir = os.path.join(test_img_dir, 'pred')
 real_test_img_dir = os.path.join(test_img_dir, 'real')
@@ -19,42 +22,53 @@ os.makedirs(pred_test_img_dir, exist_ok=True)
 os.makedirs(real_test_img_dir, exist_ok=True)
 
 
-def main(task_type, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, learning_rate):
-    train_dataset = Data('/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/dataset/contact/labels.csv', '/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/dataset/contact/frames', frame_interval, task_type)
+def main(cfg, task_type, frame_path, label_path, save_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, discriminator_window, learning_rate):
+    # get experiment ID
+    experiment_id = datetime.datetime.now().strftime('%Y-%m-%d %H-%M-%S')
+    if not os.path.exists(save_path):
+        os.makedirs(save_path, exist_ok=True)
+    
+    train_dataset = Data(frame_path, label_path, frame_interval, task_type)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
 
+    # TODO: train-val split
+
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-    model = Model(first_n_frame_dynamics).to(device)
+    generator = Generator(first_n_frame_dynamics).to(device)
     # turn off gradients for other tasks
     tasks = ['contact', 'contain', 'stability']
     for i in tasks:
         if i != task_type:
-            for n, p in model.named_parameters():
+            for n, p in generator.named_parameters():
                 if i in n:
                     p.requires_grad = False
+    discriminator = Discriminator(discriminator_window).to(device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
+    gen_optimizer = torch.optim.Adam(generator.parameters(), lr=learning_rate)
+    dis_optimizer = torch.optim.Adam(discriminator.parameters(), lr=learning_rate)
     bce_logits_loss = nn.BCEWithLogitsLoss().to(device)
     # image_loss = nn.MSELoss().to(device)
     # image_loss = SSIM().to(device)
     image_loss = MS_SSIM().to(device)
 
-    model.train()
-    print('Training...')
-    train_bce_loss_per_epoch = []
-    train_image_loss_per_epoch = []
+    stats = {'train': {'bce_loss': [], 'image_loss': [], 'adversarial_loss': []}, 'val': {'bce_loss': [], 'image_loss': []}}
+    
     for i in range(num_epoch):
+        print('Training for epoch {}/{}...'.format(i+1, num_epoch))
         temp_train_bce_loss = []
         temp_train_image_loss = []
         for j, batch in tqdm(enumerate(train_dataloader)):
+            # train generator
+            generator.train()
+            discriminator.eval()
             frames, coordinates, labels = batch
             retrieved_batch_size = len(frames[0])
             teacher_forcing_batch = random.choices(population=[True, False], weights=[teacher_forcing_prob, 1-teacher_forcing_prob], k=retrieved_batch_size)
-            pred_labels, pred_images_seq = model(task_type, coordinates, frames, teacher_forcing_batch, first_n_frame_dynamics, device)
+            pred_labels, pred_images_seq = generator(task_type, coordinates, frames, teacher_forcing_batch, first_n_frame_dynamics, device)
             labels = torch.unsqueeze(labels, dim=1).type_as(pred_labels)
             bce_loss = bce_logits_loss(pred_labels, labels)
             temp_train_bce_loss.append(bce_loss.data.item())
-            loss = bce_loss
+            gen_loss = bce_loss
 
             # NOTE: save generated images for testing
             for k in range(first_n_frame_dynamics+1):
@@ -70,37 +84,77 @@ def main(task_type, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_d
                 frames_k = frames[k+first_n_frame_dynamics+1].to(device)
                 img_loss = image_loss(pred_images, frames_k)
                 temp_train_image_loss.append(img_loss.data.item())
-                loss += - img_loss
+                gen_loss += - img_loss
             if teacher_forcing_batch[0]:
                 print("Saved new frame sequences WITH teacher forcing.")
             else:
                 print("Saved new frame sequences WITHOUT teacher forcing.")
-            model.zero_grad()
-            optimizer.zero_grad()
-            loss.backward()
-            optimizer.step()
-            print("Epoch {} batch {}/{} training done with average BCE loss={} and image loss={}.".format(i+1, j+1, len(train_dataloader), sum(temp_train_bce_loss) / len(temp_train_bce_loss), sum(temp_train_image_loss) / len(temp_train_image_loss)))
+            generator.zero_grad()
+            gen_optimizer.zero_grad()
+            gen_loss.backward()
+            gen_optimizer.step()
 
-        print("Epoch {} train BCE loss={} and MSE loss={}".format(i+1, sum(temp_train_bce_loss) / len(temp_train_bce_loss), sum(temp_train_image_loss) / len(temp_train_image_loss)))
-        train_bce_loss_per_epoch.append(sum(temp_train_bce_loss) / len(temp_train_bce_loss))
-        train_image_loss_per_epoch.append(sum(temp_train_image_loss) / len(temp_train_image_loss))
+            # TODO: train discriminator
+            generator.eval()
+            discriminator.train()
+            teacher_forcing_batch = [False] * retrieved_batch_size
+            _, pred_images_seq = generator(task_type, coordinates, frames, teacher_forcing_batch, first_n_frame_dynamics, device)
+            dis_loss = 0
+            for k in range(0, len(pred_images_seq[:-1]), discriminator_window):
+                if k+discriminator_window-1 < len(pred_images_seq[:-1]):
+                    dis_pred_images_seq = pred_images_seq[:-1][k:k+discriminator_window-1]
+                    dis_frames_seq = frames[k+first_n_frame_dynamics+1:k+first_n_frame_dynamics+discriminator_window]
+                    dis_loss += 0
+            discriminator.zero_grad()
+            dis_optimizer.zero_grad()
+            dis_loss.backward()
+            dis_optimizer.step()
 
-    with open('loss.txt', 'w') as f:
-        f.write(str(train_bce_loss_per_epoch))
-        f.write(str(train_image_loss_per_epoch))
+            print("Epoch {}/{} batch {}/{} training done with average BCE loss={} and image loss={}.".format(i+1, num_epoch, j+1, len(train_dataloader), sum(temp_train_bce_loss) / len(temp_train_bce_loss), sum(temp_train_image_loss) / len(temp_train_image_loss)))
+
+        print("Epoch {}/{} train BCE loss={} and image loss={}".format(i+1, num_epoch, sum(temp_train_bce_loss) / len(temp_train_bce_loss), sum(temp_train_image_loss) / len(temp_train_image_loss)))
+        stats['train']['bce_loss'].append(sum(temp_train_bce_loss) / len(temp_train_bce_loss))
+        stats['train']['image_loss'].append(sum(temp_train_image_loss) / len(temp_train_image_loss))
+
+        print('Validation for epoch {}/{}...'.format(i+1, num_epoch))
+
+        # TODO: validation loop
+
+        with open(os.path.join(save_path, '{}.txt'.format(experiment_id)), 'w') as f:
+            f.write('{}\n'.format(cfg))
+            f.write('{}'.format(stats))
+            f.close()
 
 
 if __name__ == '__main__':
-    task_type = 'contact'
-    num_epoch = 10
-    batch_size = 8
-    teacher_forcing_prob = 0.7
-    first_n_frame_dynamics = 5
-    frame_interval = 2
-    learning_rate = 0.001
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--type', required=True)
+    parser.add_argument('--config_file', required=True)
+    args = parser.parse_args()
+    with open(args.config_file, "r") as setting:
+        cfg = yaml.safe_load(setting)
 
+    # load config
+    task_type = cfg['task_type']
+    frame_path = cfg['frame_path']
+    label_path = cfg['label_path']
+    save_path = cfg['save_path']
+    num_epoch = cfg['num_epoch']
+    batch_size = cfg['batch_size']
+    teacher_forcing_prob = cfg['teacher_forcing_prob']
+    first_n_frame_dynamics = cfg['first_n_frame_dynamics']
+    frame_interval = cfg['frame_interval']
+    discriminator_window = cfg['discriminator_window']
+    learning_rate = cfg['learning_rate']
+
+    # check configs
+    if task_type != 'contact' or task_type != 'contain' or task_type != 'stability':
+        assert False, "Is your task_type contact, contain or stability?"
+    assert num_epoch > 0 and type(num_epoch) == int
+    assert batch_size > 0 and type(batch_size) == int
     assert teacher_forcing_prob >= 0 and teacher_forcing_prob <= 1
     assert first_n_frame_dynamics >= 0 and type(first_n_frame_dynamics) == int
     assert frame_interval > 0 and type(frame_interval) == int
+    assert learning_rate > 0
 
-    main(task_type, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, learning_rate)
+    main(cfg, task_type, frame_path, label_path, save_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, discriminator_window, learning_rate)
