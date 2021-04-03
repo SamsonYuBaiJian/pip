@@ -18,11 +18,18 @@ class Data(Dataset):
             index = int(row_data[0])
             row_data = row_data[1:]
             if task_type == 'contact':
-                num_objects = int(len(row_data) / 6)
+                col_per_obj = 6
+            elif task_type == 'contain':
+                col_per_obj = 4
+            elif task_type == 'stability':
+                col_per_obj = 5
+            else:
+                assert False, "Is your task_type contact, contain or stability?"
+            num_objects = int(len(row_data) / col_per_obj)
             for i in range(num_objects):
                 self.data['index'].append(index)
-                if task_type == 'contact':
-                    self.data['coordinates'].append([float(row_data[num_objects * 2 + i * 4]), float(row_data[num_objects * 2 + i * 4 + 1]), float(row_data[num_objects * 2 + i * 4 + 2]), float(row_data[num_objects * 2 + i * 4 + 3])])
+                self.data['coordinates'].append([float(row_data[num_objects * 2 + i * (col_per_obj - 2) + j]) for j in range(col_per_obj - 2)])
+                # self.data['coordinates'].append([float(row_data[num_objects * 2 + i * 4]), float(row_data[num_objects * 2 + i * 4 + 1]), float(row_data[num_objects * 2 + i * 4 + 2]), float(row_data[num_objects * 2 + i * 4 + 3])])
                 self.data['labels'].append(int(row_data[i * 2 + 1]))
 
         self.img_dir = img_dir

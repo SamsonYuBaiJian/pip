@@ -27,9 +27,9 @@ class Model(nn.Module):
         self.fc = nn.Linear(2048, 128)
 
         # task specific FC layers
-        self.contain = nn.Linear(128, 1)
+        self.contain = nn.Linear(128 + 2, 1)
         self.contact = nn.Linear(128 + 4, 1)
-        self.stability = nn.Linear(128, 1)
+        self.stability = nn.Linear(128 + 3, 1)
 
 
     def forward(self, task, coordinates, images, teacher_forcing_batch, first_n_frame_dynamics, device):
@@ -90,3 +90,8 @@ class Model(nn.Module):
             out = self.stability(x)
 
         return out, decoded_images
+
+
+class Discriminator(nn.Module):
+    def __init__(self):
+        pass
