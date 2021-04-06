@@ -34,7 +34,7 @@ def main(cfg, task_type, frame_path, label_path, save_stats_path, save_generated
     val_dataset = Data(frame_path, label_path, val_indices, frame_interval, task_type)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
 
-    # NOTE: 
+    # NOTE
     pred_save_img_dir = os.path.join(save_generated_images_path, 'pred')
     real_save_img_dir = os.path.join(save_generated_images_path, 'real')
     os.makedirs(pred_save_img_dir, exist_ok=True)
@@ -49,27 +49,30 @@ def main(cfg, task_type, frame_path, label_path, save_stats_path, save_generated
             for n, p in generator.named_parameters():
                 if i in n:
                     p.requires_grad = False
-    # discriminator = Discriminator(discriminator_window).to(device)
+    discriminator = Discriminator(discriminator_window).to(device)
 
     gen_optimizer = torch.optim.Adam(generator.parameters(), lr=learning_rate)
-    # dis_optimizer = torch.optim.Adam(discriminator.parameters(), lr=learning_rate)
+    dis_optimizer = torch.optim.Adam(discriminator.parameters(), lr=learning_rate)
     bce_logits_loss = nn.BCEWithLogitsLoss().to(device)
     # image_loss = nn.MSELoss().to(device)
     # image_loss = SSIM().to(device)
     image_loss = MS_SSIM().to(device)
 
-    stats = {'train': {'bce_loss': [], 'image_loss': [], 'adversarial_loss': []}, 'val': {'bce_loss': [], 'image_loss': []}}
+    stats = {'train': {'bce_loss': [], 'image_loss': [], 'gen_adversarial_loss': [], 'dis_adversarial_loss': []}, 'val': {'bce_loss': [], 'image_loss': []}}
     
     for i in range(num_epoch):
         # training
         print('Training for epoch {}/{}...'.format(i+1, num_epoch))
         temp_train_bce_loss = []
         temp_train_image_loss = []
+        temp_train_gen_adversarial_loss = []
+        temp_train_dis_adversarial_loss = []
         for j, batch in tqdm(enumerate(train_dataloader)):
-            # train generator
+            # train generator and freeze discriminator
             generator.train()
-            # discriminator.eval()
+            discriminator.eval()
             frames, coordinates, labels = batch
+            # pass through generator
             retrieved_batch_size = len(frames[0])
             teacher_forcing_batch = random.choices(population=[True, False], weights=[teacher_forcing_prob, 1-teacher_forcing_prob], k=retrieved_batch_size)
             pred_labels, pred_images_seq = generator(task_type, coordinates, frames, teacher_forcing_batch, first_n_frame_dynamics, device)
@@ -96,32 +99,51 @@ def main(cfg, task_type, frame_path, label_path, save_stats_path, save_generated
                 print("Saved new train frame sequences WITH teacher forcing.")
             else:
                 print("Saved new train frame sequences WITHOUT teacher forcing.")
+            # pass through discriminator
+            for k in range(0, len(pred_images_seq[:-1]), discriminator_window):
+                if k+discriminator_window-1 < len(pred_images_seq[:-1]):
+                    dis_pred_images_seq = pred_images_seq[:-1][k:k+discriminator_window]
+                    dis_frames_seq = frames[k+first_n_frame_dynamics+1:k+first_n_frame_dynamics+discriminator_window+1]
+                    dis_pred = discriminator(dis_pred_images_seq, dis_frames_seq, device)
+                    dis_labels = torch.zeros_like(dis_pred)
+                    dis_labels[retrieved_batch_size:,:,:,:] = 1.
+                    adversarial_loss = bce_logits_loss(dis_pred, dis_labels)
+                    temp_train_gen_adversarial_loss.append(adversarial_loss.data.item())
+                    gen_loss += adversarial_loss
             generator.zero_grad()
             gen_optimizer.zero_grad()
             gen_loss.backward()
             gen_optimizer.step()
 
-            # # TODO: train discriminator
-            # generator.eval()
-            # discriminator.train()
-            # teacher_forcing_batch = [False] * retrieved_batch_size
-            # _, pred_images_seq = generator(task_type, coordinates, frames, teacher_forcing_batch, first_n_frame_dynamics, device)
-            # dis_loss = 0
-            # for k in range(0, len(pred_images_seq[:-1]), discriminator_window):
-            #     if k+discriminator_window-1 < len(pred_images_seq[:-1]):
-            #         dis_pred_images_seq = pred_images_seq[:-1][k:k+discriminator_window-1]
-            #         dis_frames_seq = frames[k+first_n_frame_dynamics+1:k+first_n_frame_dynamics+discriminator_window]
-            #         dis_loss += 0
-            # discriminator.zero_grad()
-            # dis_optimizer.zero_grad()
-            # dis_loss.backward()
-            # dis_optimizer.step()
+            # train discriminator and freeze generator
+            generator.eval()
+            discriminator.train()
+            # NOTE: all non-teacher forcing for discriminator?
+            teacher_forcing_batch = [False] * retrieved_batch_size
+            _, pred_images_seq = generator(task_type, coordinates, frames, teacher_forcing_batch, first_n_frame_dynamics, device)
+            dis_loss = 0
+            for k in range(0, len(pred_images_seq[:-1]), discriminator_window):
+                if k+discriminator_window-1 < len(pred_images_seq[:-1]):
+                    dis_pred_images_seq = pred_images_seq[:-1][k:k+discriminator_window]
+                    dis_frames_seq = frames[k+first_n_frame_dynamics+1:k+first_n_frame_dynamics+discriminator_window+1]
+                    dis_pred = discriminator(dis_pred_images_seq, dis_frames_seq, device)
+                    dis_labels = torch.zeros_like(dis_pred)
+                    dis_labels[retrieved_batch_size:,:,:,:] = 1.
+                    adversarial_loss = bce_logits_loss(dis_pred, dis_labels)
+                    temp_train_dis_adversarial_loss.append(adversarial_loss.data.item())
+                    dis_loss += adversarial_loss
+            discriminator.zero_grad()
+            dis_optimizer.zero_grad()
+            dis_loss.backward()
+            dis_optimizer.step()
 
-            print("Epoch {}/{} batch {}/{} training done with average BCE loss={} and image loss={}.".format(i+1, num_epoch, j+1, len(train_dataloader), sum(temp_train_bce_loss) / len(temp_train_bce_loss), sum(temp_train_image_loss) / len(temp_train_image_loss)))
+            print("Epoch {}/{} batch {}/{} training done with average BCE loss={}, image loss={}, generator adversarial loss={} and discriminator adversarial loss={}.".format(i+1, num_epoch, j+1, len(train_dataloader), sum(temp_train_bce_loss) / len(temp_train_bce_loss), sum(temp_train_image_loss) / len(temp_train_image_loss), sum(temp_train_gen_adversarial_loss) / len(temp_train_gen_adversarial_loss), sum(temp_train_dis_adversarial_loss) / len(temp_train_dis_adversarial_loss)))
 
         print("Epoch {}/{} OVERALL train BCE loss={} and image loss={}".format(i+1, num_epoch, sum(temp_train_bce_loss) / len(temp_train_bce_loss), sum(temp_train_image_loss) / len(temp_train_image_loss)))
         stats['train']['bce_loss'].append(sum(temp_train_bce_loss) / len(temp_train_bce_loss))
         stats['train']['image_loss'].append(sum(temp_train_image_loss) / len(temp_train_image_loss))
+        stats['train']['gen_adversarial_loss'].append(sum(temp_train_gen_adversarial_loss) / len(temp_train_gen_adversarial_loss))
+        stats['train']['dis_adversarial_loss'].append(sum(temp_train_dis_adversarial_loss) / len(temp_train_dis_adversarial_loss))
 
 
         # validation
@@ -133,7 +155,7 @@ def main(cfg, task_type, frame_path, label_path, save_stats_path, save_generated
             for j, batch in tqdm(enumerate(val_dataloader)):
                 frames, coordinates, labels = batch
                 retrieved_batch_size = len(frames[0])
-                # NOTE: no teacher forcing for validation
+                # no teacher forcing for validation
                 teacher_forcing_batch = random.choices(population=[True, False], weights=[0, 1], k=retrieved_batch_size)
                 pred_labels, pred_images_seq = generator(task_type, coordinates, frames, teacher_forcing_batch, first_n_frame_dynamics, device)
                 labels = torch.unsqueeze(labels, dim=1).type_as(pred_labels)

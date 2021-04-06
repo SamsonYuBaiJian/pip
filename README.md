@@ -11,5 +11,5 @@
 - [X] Vary teacher forcing
 - [X] Add first few teacher forced frames for dynamics learning
 - [ ] Add train-val-test split
-- [ ] Add temporal discriminator
+- [X] Add temporal discriminator
 - [ ] Fix loss calculations
