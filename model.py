@@ -106,6 +106,7 @@ class Discriminator(nn.Module):
         assert len(dis_frames_seq) == len(dis_pred_images_seq)
         dis_pred_images_seq = torch.cat(dis_pred_images_seq, dim=1)
         dis_frames_seq = torch.cat(dis_frames_seq, dim=1)
+        dis_frames_seq = dis_frames_seq.to(device)
         images = torch.cat([dis_pred_images_seq, dis_frames_seq], dim=0)
 
         images = images.to(device)
