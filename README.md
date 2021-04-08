@@ -1,4 +1,4 @@
-# CLEVEREST
+# SPECIAL
 ## Running
 `python main.py --config_file config.yml`
 
