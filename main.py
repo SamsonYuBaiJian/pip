@@ -16,10 +16,15 @@ import pandas as pd
 
 
 def get_classification_accuracy(pred_labels, labels):
-    # TODO
-    print(pred_labels.shape, labels.shape)
+    """
+    Get accuracy for classification.
+    """
+    size = pred_labels.shape[0]
+    mask = pred_labels >= 0.5
+    num_correct = torch.sum(mask == labels).item()
+    acc = num_correct / size
 
-    return 0
+    return acc, num_correct
 
 
 def main(cfg, task_type, frame_path, train_label_path, val_label_path, test_label_path, save_stats_path, save_generated_images_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, discriminator_window, learning_rate):
@@ -55,18 +60,20 @@ def main(cfg, task_type, frame_path, train_label_path, val_label_path, test_labe
     bce_logits_loss = nn.BCEWithLogitsLoss().to(device)
     # image_loss = nn.MSELoss().to(device)
     # image_loss = SSIM().to(device)
-    coordinate_loss = nn.MSELoss().to(device)
+    coordinate_mse_loss = nn.MSELoss().to(device)
     image_loss = MS_SSIM().to(device)
 
-    stats = {'train': {'bce_loss': [], 'image_loss': [], 'gen_adversarial_loss': [], 'dis_adversarial_loss': []}, 'val': {'bce_loss': [], 'image_loss': []}}
+    stats = {'train': {'classification_loss': [], 'classification_acc': [], 'image_loss': [], 'coordinate_loss': []}, 'val': {'classification_loss': [], 'classification_acc': [], 'image_loss': [], 'coordinate_loss': []}}
     
     for i in range(num_epoch):
         # training
         print('Training for epoch {}/{}...'.format(i+1, num_epoch))
-        temp_train_bce_loss = []
+        temp_train_classification_loss = []
         temp_train_image_loss = []
+        temp_train_coor_loss = []
         # temp_train_gen_adversarial_loss = []
         # temp_train_dis_adversarial_loss = []
+        total_num_correct = 0
         total_cnt = 0
         for j, batch in tqdm(enumerate(train_dataloader)):
             generator.train()
@@ -78,11 +85,13 @@ def main(cfg, task_type, frame_path, train_label_path, val_label_path, test_labe
             teacher_forcing_batch = random.choices(population=[True, False], weights=[teacher_forcing_prob, 1-teacher_forcing_prob], k=retrieved_batch_size)
             pred_labels, pred_images_seq, pred_coordinates_seq = generator(task_type, coordinates, frames, teacher_forcing_batch, first_n_frame_dynamics, device)
             labels = torch.unsqueeze(labels, dim=1).type_as(pred_labels)
-            train_acc = get_classification_accuracy(pred_labels, labels)
+            train_acc, num_correct = get_classification_accuracy(pred_labels, labels)
+            total_num_correct += num_correct
             bce_loss = bce_logits_loss(pred_labels, labels)
             gen_loss = bce_loss
-            temp_train_bce_loss.append(bce_loss.data.item() * retrieved_batch_size)
+            temp_train_classification_loss.append(bce_loss.data.item() * retrieved_batch_size)
             temp_train_image_loss.append(0)
+            temp_train_coor_loss.append(0)
 
             # NOTE: save generated images for testing
             for k in range(first_n_frame_dynamics+1):
@@ -99,7 +108,13 @@ def main(cfg, task_type, frame_path, train_label_path, val_label_path, test_labe
                 gen_loss += - img_loss
                 temp_train_image_loss[-1] += img_loss.data.item() * retrieved_batch_size
                 seq_len = len(pred_images_seq[:-1])
+
+                coordinates_k = torch.stack(coordinates[k+first_n_frame_dynamics+1]).T.to(device)
+                coordinate_loss = coordinate_mse_loss(pred_coordinates_seq[k], coordinates_k.float())
+                gen_loss += coordinate_loss
+                temp_train_coor_loss[-1] += coordinate_loss.data.item() * retrieved_batch_size
             temp_train_image_loss[-1] /= seq_len
+            temp_train_coor_loss[-1] /= seq_len
             
             if teacher_forcing_batch[0]:
                 print("Saved new train frame sequences WITH teacher forcing.")
@@ -143,19 +158,23 @@ def main(cfg, task_type, frame_path, train_label_path, val_label_path, test_labe
             # dis_loss.backward()
             # dis_optimizer.step()
 
-            print("Epoch {}/{} batch {}/{} training done with average BCE loss={}, image loss={}".format(i+1, num_epoch, j+1, len(train_dataloader), sum(temp_train_bce_loss) / total_cnt, sum(temp_train_image_loss) / total_cnt)) # sum(temp_train_gen_adversarial_loss) / len(temp_train_gen_adversarial_loss), sum(temp_train_dis_adversarial_loss) / len(temp_train_dis_adversarial_loss)))
+            print("Epoch {}/{} batch {}/{} training done with classification loss={}, classification accuracy={}, image loss={}, coordinate loss={}.".format(i+1, num_epoch, j+1, len(train_dataloader), temp_train_classification_loss[-1] / retrieved_batch_size, train_acc, temp_train_image_loss[-1] / retrieved_batch_size, temp_train_coor_loss[-1] / retrieved_batch_size)) # sum(temp_train_gen_adversarial_loss) / len(temp_train_gen_adversarial_loss), sum(temp_train_dis_adversarial_loss) / len(temp_train_dis_adversarial_loss)))
 
-        print("Epoch {}/{} OVERALL train BCE loss={} and image loss={}".format(i+1, num_epoch, sum(temp_train_bce_loss) / total_cnt, sum(temp_train_image_loss) / total_cnt))
-        stats['train']['bce_loss'].append(sum(temp_train_bce_loss) / total_cnt)
+        print("Epoch {}/{} OVERALL train classification loss={}, classification accuracy={}, image loss={}, coordinate loss={}.".format(i+1, num_epoch, sum(temp_train_classification_loss) / total_cnt, total_num_correct / total_cnt, sum(temp_train_image_loss) / total_cnt, sum(temp_train_coor_loss) / total_cnt))
+        stats['train']['classification_loss'].append(sum(temp_train_classification_loss) / total_cnt)
+        stats['train']['classification_acc'].append(total_num_correct / total_cnt)
         stats['train']['image_loss'].append(sum(temp_train_image_loss) / total_cnt)
+        stats['train']['coordinate_loss'].append(sum(temp_train_classification_loss) / total_cnt)
         # stats['train']['gen_adversarial_loss'].append(sum(temp_train_gen_adversarial_loss) / len(temp_train_gen_adversarial_loss))
         # stats['train']['dis_adversarial_loss'].append(sum(temp_train_dis_adversarial_loss) / len(temp_train_dis_adversarial_loss))
 
 
         # validation
         print('Validation for epoch {}/{}...'.format(i+1, num_epoch))
-        temp_val_bce_loss = []
+        temp_val_classification_loss = []
         temp_val_image_loss = []
+        temp_val_coor_loss = []
+        total_num_correct = 0
         total_cnt = 0
         generator.eval()
         with torch.no_grad():
@@ -167,10 +186,13 @@ def main(cfg, task_type, frame_path, train_label_path, val_label_path, test_labe
                 teacher_forcing_batch = random.choices(population=[True, False], weights=[0, 1], k=retrieved_batch_size)
                 pred_labels, pred_images_seq = generator(task_type, coordinates, frames, teacher_forcing_batch, first_n_frame_dynamics, device)
                 labels = torch.unsqueeze(labels, dim=1).type_as(pred_labels)
+                val_acc, num_correct = get_classification_accuracy(pred_labels, labels)
+                total_num_correct += num_correct
                 bce_loss = bce_logits_loss(pred_labels, labels)
-                gen_loss = bce_loss
-                temp_val_bce_loss.append(bce_loss.data.item() * retrieved_batch_size)
+                # gen_loss = bce_loss
+                temp_val_classification_loss.append(bce_loss.data.item() * retrieved_batch_size)
                 temp_val_image_loss.append(0)
+                temp_val_coor_loss.append(0)
 
                 # NOTE: save generated images for testing
                 for k in range(first_n_frame_dynamics+1):
@@ -185,20 +207,27 @@ def main(cfg, task_type, frame_path, train_label_path, val_label_path, test_labe
                     frames_k = frames[k+first_n_frame_dynamics+1].to(device)
                     img_loss = image_loss(pred_images, frames_k)
                     temp_val_image_loss[-1] += img_loss.data.item() * retrieved_batch_size
-                    gen_loss += - img_loss
+                    # gen_loss += - img_loss
                     seq_len = len(pred_images_seq[:-1])
+
+                    coordinates_k = torch.stack(coordinates[k+first_n_frame_dynamics+1]).T.to(device)
+                    coordinate_loss = coordinate_mse_loss(pred_coordinates_seq[k], coordinates_k)
+                    temp_val_coor_loss[-1] += coordinate_loss.data.item() * retrieved_batch_size
                 temp_val_image_loss[-1] /= seq_len
+                temp_val_coor_loss[-1] /= seq_len
 
                 if teacher_forcing_batch[0]:
                     print("Saved new validation sequences WITH teacher forcing.")
                 else:
                     print("Saved new validation sequences WITHOUT teacher forcing.")
                 
-                print("Epoch {}/{} batch {}/{} validation done with average BCE loss={} and image loss={}.".format(i+1, num_epoch, j+1, len(val_dataloader), sum(temp_val_bce_loss) / len(temp_val_bce_loss), sum(temp_val_image_loss) / len(temp_val_image_loss)))
+                print("Epoch {}/{} batch {}/{} validation done with classification loss={}, classification accuracy={}, image loss={}, coordinate loss={}.".format(i+1, num_epoch, j+1, len(val_dataloader), temp_val_classification_loss[-1] / retrieved_batch_size, val_acc, temp_val_image_loss[-1] / retrieved_batch_size, temp_val_coor_loss[-1] / retrieved_batch_size))
 
-        print("Epoch {}/{} OVERALL validation BCE loss={} and image loss={}".format(i+1, num_epoch, sum(temp_val_bce_loss) / total_cnt, sum(temp_val_image_loss) / total_cnt))
-        stats['val']['bce_loss'].append(sum(temp_val_bce_loss) / total_cnt)
+        print("Epoch {}/{} OVERALL validation classification loss={}, classification accuracy={}, image loss={}, coordinate loss={}.".format(i+1, num_epoch, sum(temp_val_classification_loss) / total_cnt, total_num_correct / total_cnt, sum(temp_val_image_loss) / total_cnt, sum(temp_val_coor_loss) / total_cnt))
+        stats['val']['classification_loss'].append(sum(temp_val_classification_loss) / total_cnt)
+        stats['val']['classification_acc'].append(total_num_correct / total_cnt)
         stats['val']['image_loss'].append(sum(temp_val_image_loss) / total_cnt)
+        stats['val']['coordinate_loss'].append(sum(temp_val_coor_loss) / total_cnt)
 
         with open(os.path.join(save_stats_path, '{}.txt'.format(experiment_id)), 'w') as f:
             f.write('{}\n'.format(cfg))

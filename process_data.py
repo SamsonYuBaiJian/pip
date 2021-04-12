@@ -43,15 +43,23 @@ def save_data(data, start_idx, end_idx, label_path, task_type):
         # for each object for object tracking
         for obj in sample_data:
             obj_coordinates = []
+            # TODO: ignore red ball for each task
+            initial_coordinates = [float(obj[3]), float(obj[5]), float(obj[7]), float(obj[9]), float(obj[11]), float(obj[13])]
+            if task_type == 'contact':
+                red_ball_initial_coordinates = [5, 5, 2, 0, 0, 0]
+            if initial_coordinates == red_ball_initial_coordinates:
+                # skip if red ball
+                continue
             # ignore object name
             for j in range(1, len(obj), 13):
                 obj_coordinates.append([float(obj[j+2]), float(obj[j+4]), float(obj[j+6]), float(obj[j+8]), float(obj[j+10]), float(obj[j+12])])
-            # get classification label for contact task
+            # get classification label for each task
             if task_type == 'contact':
                 if abs(obj_coordinates[0][0] - obj_coordinates[-1][0]) >= 0.05 or abs(obj_coordinates[0][1] - obj_coordinates[-1][1]) >= 0.05:
                     obj_coordinates.append([1])
                 else:
                     obj_coordinates.append([0])
+            # TODO
             output_data[sample_num].append(obj_coordinates)
     with open(label_path, 'w') as fp:
         json.dump(output_data, fp)
@@ -98,10 +106,10 @@ if __name__ == '__main__':
         assert False, "Is your task_type contact, contain or stability?"
     assert len(train_val_test_splits) == 3 and sum(train_val_test_splits) == 1
 
-    # print("Processing data for {} task...".format(task_type))
-    # print("Getting data splits from {}...".format(data_path))
-    # get_dataset_splits(data_path, video_path, train_val_test_splits, task_type, train_label_path, val_label_path, test_label_path)
-    # print("Done.")
-    print("Getting frames from {} and saving to {}...".format(video_path, frame_path))
-    convert_avi_to_frame(video_path, frame_path)
+    print("Processing data for {} task...".format(task_type))
+    print("Getting data splits from {}...".format(data_path))
+    get_dataset_splits(data_path, video_path, train_val_test_splits, task_type, train_label_path, val_label_path, test_label_path)
     print("Done.")
+    # print("Getting frames from {} and saving to {}...".format(video_path, frame_path))
+    # convert_avi_to_frame(video_path, frame_path)
+    # print("Done.")

@@ -17,4 +17,4 @@
 - [X] Add temporal discriminator
 - [X] Fix loss calculations
 - [X] Add coordinates for object identification/tracking
-- [ ] Add accuracy
+- [X] Add accuracy
