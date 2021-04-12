@@ -5,7 +5,6 @@
 ## Tasks
 - [X] Data processing
 - [X] Build basic model
-- [X] Add coordinate conditioning for object identification/tracking
 - [X] Add loss for generated images
 - [X] Add skip connections
 - [X] Vary teacher forcing
@@ -13,3 +12,5 @@
 - [ ] Add train-val-test split
 - [X] Add temporal discriminator
 - [ ] Fix loss calculations
+- [ ] Add coordinates for object identification/tracking
+- [ ] Add accuracy

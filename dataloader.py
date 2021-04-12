@@ -8,9 +8,12 @@ import numpy as np
 
 
 class Data(Dataset):
-    def __init__(self, img_dir, csv_file, indices, frame_interval, task_type):
+    def __init__(self, img_dir, data_file, indices, frame_interval, task_type):
         self.data = {'index': [], 'coordinates': [], 'labels': []}
-        df = pd.read_csv(csv_file)
+        with open(data_file, 'r') as f:
+            data = eval(f.readline())
+            print(data)
+            f.close()
         for row in df.itertuples():
             # gets rid of NaN values
             row_data = [i for i in row if i == i]
@@ -28,7 +31,6 @@ class Data(Dataset):
             for i in range(num_objects):
                 self.data['index'].append(index)
                 self.data['coordinates'].append([float(row_data[num_objects * 2 + i * (col_per_obj - 2) + j]) for j in range(col_per_obj - 2)])
-                # self.data['coordinates'].append([float(row_data[num_objects * 2 + i * 4]), float(row_data[num_objects * 2 + i * 4 + 1]), float(row_data[num_objects * 2 + i * 4 + 2]), float(row_data[num_objects * 2 + i * 4 + 3])])
                 self.data['labels'].append(int(row_data[i * 2 + 1]))
 
         self.img_dir = img_dir

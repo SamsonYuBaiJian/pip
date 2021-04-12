@@ -1,8 +1,13 @@
 task_type: 'contact'
-frame_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/dataset/contact/frames"
-label_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/dataset/contact/labels.csv"
+frame_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/frames"
+train_label_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/train.json"
+val_label_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/val.json"
+test_label_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/test.json"
+video_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/videos"
+data_txt_file: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/data.txt"
+train_val_test_splits: [0.6, 0.2, 0.2]
 save_stats_path: "experiments"
-save_generated_images_path: '/mnt/c/Users/samso/Documents/SamsonYuBaiJian/CLEVEREST/generations'
+save_generated_images_path: '/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/generations'
 
 # hyperparameters
 num_epoch: 10
@@ -12,4 +17,3 @@ first_n_frame_dynamics: 5
 frame_interval: 2
 discriminator_window: 3
 learning_rate: 0.001
-train_val_split: 0.8

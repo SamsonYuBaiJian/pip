@@ -15,24 +15,14 @@ import os
 import pandas as pd
 
 
-def main(cfg, task_type, frame_path, label_path, save_stats_path, save_generated_images_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, discriminator_window, learning_rate, train_val_split):
+def main(cfg, task_type, frame_path, label_path, save_stats_path, save_generated_images_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, discriminator_window, learning_rate):
     # get experiment ID
     experiment_id = datetime.datetime.now().strftime('%Y-%m-%d %H-%M-%S')
     if not os.path.exists(save_stats_path):
         os.makedirs(save_stats_path, exist_ok=True)
     
-    # process train-val split
-    df = pd.read_csv(label_path)
-    df_len = len(df.index)
-    train_size = int(train_val_split * df_len)
-    train_indices = [i for i in range(train_size)]
-    train_dataset = Data(frame_path, label_path, train_indices, frame_interval, task_type)
+    train_dataset = Data(frame_path, label_path, None, frame_interval, task_type)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
-    val_size = df_len - train_size
-    first_val_index = train_indices[-1] + 1
-    val_indices = [first_val_index+i for i in range(val_size)]
-    val_dataset = Data(frame_path, label_path, val_indices, frame_interval, task_type)
-    val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
 
     # NOTE
     pred_save_img_dir = os.path.join(save_generated_images_path, 'pred')
@@ -119,7 +109,7 @@ def main(cfg, task_type, frame_path, label_path, save_stats_path, save_generated
             generator.eval()
             discriminator.train()
             # NOTE: all non-teacher forcing for discriminator?
-            teacher_forcing_batch = [False] * retrieved_batch_size
+            # teacher_forcing_batch = [False] * retrieved_batch_size
             _, pred_images_seq = generator(task_type, coordinates, frames, teacher_forcing_batch, first_n_frame_dynamics, device)
             dis_loss = 0
             for k in range(0, len(pred_images_seq[:-1]), discriminator_window):
@@ -214,7 +204,6 @@ if __name__ == '__main__':
     frame_interval = cfg['frame_interval']
     discriminator_window = cfg['discriminator_window']
     learning_rate = cfg['learning_rate']
-    train_val_split = cfg['train_val_split']
 
     # check configs
     if task_type != 'contact' and task_type != 'contain' and task_type != 'stability':
@@ -226,6 +215,5 @@ if __name__ == '__main__':
     assert frame_interval > 0 and type(frame_interval) == int
     assert discriminator_window > 0 and type(discriminator_window) == int
     assert learning_rate > 0
-    assert train_val_split >= 0 and train_val_split <=1
 
-    main(cfg, task_type, frame_path, label_path, save_stats_path, save_generated_images_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, discriminator_window, learning_rate, train_val_split)
+    main(cfg, task_type, frame_path, label_path, save_stats_path, save_generated_images_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, discriminator_window, learning_rate)
