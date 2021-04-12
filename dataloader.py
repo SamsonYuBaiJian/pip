@@ -1,39 +1,36 @@
-import pandas as pd
 from torch.utils.data import Dataset
 import os
 from skimage import io
 from torchvision import transforms
 from natsort import natsorted
 import numpy as np
+import json
 
 
 class Data(Dataset):
-    def __init__(self, img_dir, data_file, indices, frame_interval, task_type):
-        self.data = {'index': [], 'coordinates': [], 'labels': []}
-        with open(data_file, 'r') as f:
-            data = eval(f.readline())
-            print(data)
+    def __init__(self, frame_path, label_path, frame_interval):
+        self.data = {'scene_id': [], 'coordinates': [], 'labels': []}
+        with open(label_path, 'r') as f:
+            label_data = json.load(f)
             f.close()
-        for row in df.itertuples():
-            # gets rid of NaN values
-            row_data = [i for i in row if i == i]
-            index = int(row_data[0])
-            if index not in indices:
-                continue
-            row_data = row_data[1:]
-            if task_type == 'contact':
-                col_per_obj = 6
-            elif task_type == 'contain':
-                col_per_obj = 4
-            elif task_type == 'stability':
-                col_per_obj = 5
-            num_objects = int(len(row_data) / col_per_obj)
-            for i in range(num_objects):
-                self.data['index'].append(index)
-                self.data['coordinates'].append([float(row_data[num_objects * 2 + i * (col_per_obj - 2) + j]) for j in range(col_per_obj - 2)])
-                self.data['labels'].append(int(row_data[i * 2 + 1]))
+        # process frame interval skips here to reduce cost during retrieval later
+        for scene_id in label_data.keys():
+            total_seq_len = len(label_data[scene_id][0]) - 1
+            break
+        self.frame_indices = [i for i in range(total_seq_len) if i % frame_interval == 0]
 
-        self.img_dir = img_dir
+        for scene_id in label_data.keys():
+            scene_data = label_data[scene_id]
+            num_objects = len(scene_data)
+            for i in range(num_objects):
+                self.data['scene_id'].append(scene_id)
+                scene_data_i = scene_data[i]
+                coordinates = scene_data_i[:-1]
+                label = int(scene_data_i[-1][0])
+                self.data['coordinates'].append([coordinates[j] for j in self.frame_indices])
+                self.data['labels'].append(label)
+
+        self.img_dir = frame_path
         self.transform = transforms.Compose([
             transforms.ToPILImage(),
             transforms.Resize((256, 256)),
@@ -44,18 +41,19 @@ class Data(Dataset):
 
 
     def __len__(self):
-        return len(self.data['index'])
+        return len(self.data['scene_id'])
 
 
     def __getitem__(self, idx):
-        index = self.data['index'][idx]
+        scene_id = self.data['scene_id'][idx]
 
-        image_folder = os.path.join(self.img_dir, str(index + 1))
+        image_folder = os.path.join(self.img_dir, scene_id)
         image_paths = os.listdir(image_folder)
         image_paths = natsorted(image_paths)
         # frame interval
-        image_paths = [os.path.join(image_folder, image_paths[i]) for i in range(len(image_paths)) if i % self.frame_interval == 0]
+        image_paths = [os.path.join(image_folder, image_paths[i]) for i in self.frame_indices]
         assert len(image_paths) > 0
         images = [self.transform(io.imread(i)) for i in image_paths]
+        print(len(images), len(self.data['coordinates'][idx]))
 
         return images, self.data['coordinates'][idx], self.data['labels'][idx]

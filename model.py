@@ -6,17 +6,23 @@ class Generator(nn.Module):
     def __init__(self, first_n_frame_dynamics):
         super(Generator, self).__init__()
 
-        # encoder
+        # frame encoder
         self.conv1 = nn.Conv2d(3 * (first_n_frame_dynamics + 1), 16, 3, stride=2, padding=1)
         self.conv2 = nn.Conv2d(16, 32, 3, stride=2, padding=1)
         self.conv3 = nn.Conv2d(32, 8, 3, stride=2, padding=1)
         self.flatten = nn.Flatten()
 
-        # LSTM
-        self.lstm_cell1 = nn.LSTMCell(8192, 2048)
-        self.lstm_cell2 = nn.LSTMCell(2048, 2048)
+        # coordinate encoder
+        self.coor = nn.Linear(6, 6)
 
-        # decoder
+        # LSTM
+        self.lstm_cell1 = nn.LSTMCell(8192 + 6, 2048 + 6)
+        self.lstm_cell2 = nn.LSTMCell(2048 + 6, 2048 + 6)
+
+        # coordinate decoder
+        self.d_coor = nn.Linear(6, 6)
+
+        # frame decoder
         self.upsample1 = nn.Upsample(scale_factor=4)
         self.upsample2 = nn.Upsample(scale_factor=2)
         self.d_conv1 = nn.Conv2d(8, 32, 3, padding=1)
@@ -24,18 +30,19 @@ class Generator(nn.Module):
         self.d_conv3 = nn.Conv2d(16 * 2, 3, 3, padding=1)
 
         # shared FC layer
-        self.fc = nn.Linear(2048, 128)
+        self.fc = nn.Linear(2048 + 6, 128)
 
         # task specific FC layers
-        self.contain = nn.Linear(128 + 2, 1)
-        self.contact = nn.Linear(128 + 4, 1)
-        self.stability = nn.Linear(128 + 3, 1)
+        self.contain = nn.Linear(128, 1)
+        self.contact = nn.Linear(128, 1)
+        self.stability = nn.Linear(128, 1)
 
 
     def forward(self, task, coordinates, images, teacher_forcing_batch, first_n_frame_dynamics, device):
         sequence_len = len(images)
         batch_size, channels, height, width = images[0].shape
         decoded_images = []
+        pred_coordinates = []
         assert first_n_frame_dynamics < sequence_len
 
         # stack first n frames into input for model to learn initial dynamics
@@ -64,6 +71,7 @@ class Generator(nn.Module):
             flattened = self.flatten(conv3_feat)
 
             # LSTM processing
+            # TODO: add coordinates input and generation for object identification/tracking
             if i == first_n_frame_dynamics:
                 hx1, cx1 = self.lstm_cell1(flattened)
                 hx2, cx2 = self.lstm_cell2(hx1)
@@ -79,9 +87,9 @@ class Generator(nn.Module):
             decoded_images.append(decoded_x)
         
         x = torch.relu(self.fc(hx2))
-        # add coordinate conditioning for object identification/tracking
-        coordinates = torch.stack(coordinates).T.to(device)
-        x = torch.cat([x, coordinates.type_as(x)], dim=1)
+        # # add coordinate conditioning for object identification/tracking
+        # coordinates = torch.stack(coordinates).T.to(device)
+        # x = torch.cat([x, coordinates.type_as(x)], dim=1)
         if task == 'contact':
             out = self.contact(x)
         elif task == 'contain':
@@ -89,29 +97,29 @@ class Generator(nn.Module):
         elif task == 'stability':
             out = self.stability(x)
 
-        return out, decoded_images
+        return out, decoded_images, pred_coordinates
 
 
-class Discriminator(nn.Module):
-    def __init__(self, discriminator_window):
-        super(Discriminator, self).__init__()
+# class Discriminator(nn.Module):
+#     def __init__(self, discriminator_window):
+#         super(Discriminator, self).__init__()
 
-        self.conv1 = nn.Conv2d(3 * discriminator_window, 16, 3, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(16, 32, 3, stride=2, padding=1)
-        self.conv3 = nn.Conv2d(32, 1, 3, stride=2, padding=1)
+#         self.conv1 = nn.Conv2d(3 * discriminator_window, 16, 3, stride=2, padding=1)
+#         self.conv2 = nn.Conv2d(16, 32, 3, stride=2, padding=1)
+#         self.conv3 = nn.Conv2d(32, 1, 3, stride=2, padding=1)
         
-        self.leaky_relu = nn.LeakyReLU(0.2)
+#         self.leaky_relu = nn.LeakyReLU(0.2)
 
-    def forward(self, dis_pred_images_seq, dis_frames_seq, device):
-        assert len(dis_frames_seq) == len(dis_pred_images_seq)
-        dis_pred_images_seq = torch.cat(dis_pred_images_seq, dim=1)
-        dis_frames_seq = torch.cat(dis_frames_seq, dim=1)
-        dis_frames_seq = dis_frames_seq.to(device)
-        images = torch.cat([dis_pred_images_seq, dis_frames_seq], dim=0)
+#     def forward(self, dis_pred_images_seq, dis_frames_seq, device):
+#         assert len(dis_frames_seq) == len(dis_pred_images_seq)
+#         dis_pred_images_seq = torch.cat(dis_pred_images_seq, dim=1)
+#         dis_frames_seq = torch.cat(dis_frames_seq, dim=1)
+#         dis_frames_seq = dis_frames_seq.to(device)
+#         images = torch.cat([dis_pred_images_seq, dis_frames_seq], dim=0)
 
-        images = images.to(device)
-        x = self.leaky_relu(self.conv1(images))
-        x = self.leaky_relu(self.conv2(x))
-        out = self.leaky_relu(self.conv3(x))
+#         images = images.to(device)
+#         x = self.leaky_relu(self.conv1(images))
+#         x = self.leaky_relu(self.conv2(x))
+#         out = self.leaky_relu(self.conv3(x))
 
-        return out
+#         return out

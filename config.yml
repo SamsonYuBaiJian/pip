@@ -4,7 +4,7 @@ train_label_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/
 val_label_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/val.json"
 test_label_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/test.json"
 video_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/videos"
-data_txt_file: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/data.txt"
+data_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/data"
 train_val_test_splits: [0.6, 0.2, 0.2]
 save_stats_path: "experiments"
 save_generated_images_path: '/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/generations'
@@ -15,5 +15,5 @@ batch_size: 8
 teacher_forcing_prob: 0.7
 first_n_frame_dynamics: 5
 frame_interval: 2
-discriminator_window: 3
+# discriminator_window: 3
 learning_rate: 0.001
