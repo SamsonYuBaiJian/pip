@@ -13,7 +13,8 @@ class Data(Dataset):
         with open(label_path, 'r') as f:
             label_data = json.load(f)
             f.close()
-        # process frame interval skips here to reduce cost during retrieval later
+
+        # process frame interval skips here to reduce cost for retrieval
         for scene_id in label_data.keys():
             total_seq_len = len(label_data[scene_id][0]) - 1
             break
@@ -30,7 +31,7 @@ class Data(Dataset):
                 self.data['coordinates'].append([coordinates[j] for j in self.frame_indices])
                 self.data['labels'].append(label)
 
-        self.img_dir = frame_path
+        self.frame_path = frame_path
         self.transform = transforms.Compose([
             transforms.ToPILImage(),
             transforms.Resize((256, 256)),
@@ -47,13 +48,12 @@ class Data(Dataset):
     def __getitem__(self, idx):
         scene_id = self.data['scene_id'][idx]
 
-        image_folder = os.path.join(self.img_dir, scene_id)
+        image_folder = os.path.join(self.frame_path, scene_id)
         image_paths = os.listdir(image_folder)
         image_paths = natsorted(image_paths)
         # frame interval
         image_paths = [os.path.join(image_folder, image_paths[i]) for i in self.frame_indices]
         assert len(image_paths) > 0
         images = [self.transform(io.imread(i)) for i in image_paths]
-        print(len(images), len(self.data['coordinates'][idx]))
 
         return images, self.data['coordinates'][idx], self.data['labels'][idx]
