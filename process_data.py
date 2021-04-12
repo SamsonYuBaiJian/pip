@@ -53,13 +53,12 @@ def save_data(data, start_idx, end_idx, label_path, task_type):
             # ignore object name
             for j in range(1, len(obj), 13):
                 obj_coordinates.append([float(obj[j+2]), float(obj[j+4]), float(obj[j+6]), float(obj[j+8]), float(obj[j+10]), float(obj[j+12])])
-            # get classification label for each task
+            # TODO: get classification label for each task
             if task_type == 'contact':
                 if abs(obj_coordinates[0][0] - obj_coordinates[-1][0]) >= 0.05 or abs(obj_coordinates[0][1] - obj_coordinates[-1][1]) >= 0.05:
                     obj_coordinates.append([1])
                 else:
                     obj_coordinates.append([0])
-            # TODO
             output_data[sample_num].append(obj_coordinates)
     with open(label_path, 'w') as fp:
         json.dump(output_data, fp)

@@ -1,10 +1,12 @@
 # SPECIAL
-## Running
+## Running the Code
 `python main.py --config_file config.yml`
 
 ## Data format
-### Coordinates
 `[X, Y, Z, RotX, RotY, RotZ]`
+
+## Data Processing
+`python process_data.py --config_file config.yml`
 
 ## Tasks
 - [X] Data processing
