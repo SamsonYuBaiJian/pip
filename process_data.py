@@ -15,7 +15,7 @@ def convert_avi_to_frame(video_path, frame_path):
 
     videos = [os.path.join(video_path, i) for i in os.listdir(video_path)]
 
-    for video in videos:
+    for _, video in enumerate(videos):
         video_id = video.split('/')[-1].split('.')[0]
         video_folder = os.path.join(frame_path, video_id)
         os.makedirs(video_folder, exist_ok=True)

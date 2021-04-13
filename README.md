@@ -20,3 +20,4 @@
 - [X] Fix loss calculations
 - [X] Add coordinates for object identification/tracking
 - [X] Add accuracy
+- [ ] Inference code
