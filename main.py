@@ -159,7 +159,6 @@ def main(cfg, task_type, frame_path, train_label_path, val_label_path, test_labe
             # dis_optimizer.step()
 
             print("Epoch {}/{} batch {}/{} training done with classification loss={}, classification accuracy={}, image loss={}, coordinate loss={}.".format(i+1, num_epoch, j+1, len(train_dataloader), temp_train_classification_loss[-1] / retrieved_batch_size, train_acc, temp_train_image_loss[-1] / retrieved_batch_size, temp_train_coor_loss[-1] / retrieved_batch_size)) # sum(temp_train_gen_adversarial_loss) / len(temp_train_gen_adversarial_loss), sum(temp_train_dis_adversarial_loss) / len(temp_train_dis_adversarial_loss)))
-            break
 
         print("Epoch {}/{} OVERALL train classification loss={}, classification accuracy={}, image loss={}, coordinate loss={}.".format(i+1, num_epoch, sum(temp_train_classification_loss) / total_cnt, total_num_correct / total_cnt, sum(temp_train_image_loss) / total_cnt, sum(temp_train_coor_loss) / total_cnt))
         stats['train']['classification_loss'].append(sum(temp_train_classification_loss) / total_cnt)
