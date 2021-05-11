@@ -21,3 +21,4 @@
 - [X] Add coordinates for object identification/tracking
 - [X] Add accuracy
 - [ ] Inference code
+- [X] Save model according to validation loss

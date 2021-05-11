@@ -13,6 +13,7 @@ import argparse
 import datetime
 import os
 import pandas as pd
+import math
 
 
 def get_classification_accuracy(pred_labels, labels):
@@ -27,11 +28,13 @@ def get_classification_accuracy(pred_labels, labels):
     return acc, num_correct
 
 
-def main(cfg, task_type, frame_path, train_label_path, val_label_path, test_label_path, save_stats_path, save_generated_images_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, discriminator_window, learning_rate):
+def main(cfg, task_type, frame_path, train_label_path, val_label_path, test_label_path, save_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, discriminator_window, learning_rate, save_frames_every):
     # get experiment ID
     experiment_id = datetime.datetime.now().strftime('%Y-%m-%d %H-%M-%S')
-    if not os.path.exists(save_stats_path):
-        os.makedirs(save_stats_path, exist_ok=True)
+    if not os.path.exists(save_path):
+        os.makedirs(save_path, exist_ok=True)
+    experiment_save_path = os.path.join(save_path, experiment_id)
+    os.makedirs(experiment_save_path, exist_ok=True)
     
     train_dataset = Data(frame_path, train_label_path, frame_interval)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
@@ -39,10 +42,11 @@ def main(cfg, task_type, frame_path, train_label_path, val_label_path, test_labe
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
 
     # NOTE
-    pred_save_img_dir = os.path.join(save_generated_images_path, 'pred')
-    real_save_img_dir = os.path.join(save_generated_images_path, 'real')
-    os.makedirs(pred_save_img_dir, exist_ok=True)
-    os.makedirs(real_save_img_dir, exist_ok=True)
+    save_img_dir = os.path.join(experiment_save_path, 'generations')
+    # pred_save_img_dir = os.path.join(save_generated_images_path, 'pred')
+    # real_save_img_dir = os.path.join(save_generated_images_path, 'real')
+    # os.makedirs(pred_save_img_dir, exist_ok=True)
+    # os.makedirs(real_save_img_dir, exist_ok=True)
 
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     generator = Generator(first_n_frame_dynamics).to(device)
@@ -65,6 +69,13 @@ def main(cfg, task_type, frame_path, train_label_path, val_label_path, test_labe
 
     stats = {'train': {'classification_loss': [], 'classification_acc': [], 'image_loss': [], 'coordinate_loss': []}, 'val': {'classification_loss': [], 'classification_acc': [], 'image_loss': [], 'coordinate_loss': []}}
     
+    min_val_classification_loss = math.inf
+    min_val_image_loss = math.inf
+    min_val_coordinate_loss = math.inf
+    min_val_classification_epoch = None
+    min_val_image_epoch = None
+    min_val_coordinate_epoch = None
+
     for i in range(num_epoch):
         # training
         print('Training for epoch {}/{}...'.format(i+1, num_epoch))
@@ -93,15 +104,22 @@ def main(cfg, task_type, frame_path, train_label_path, val_label_path, test_labe
             temp_train_image_loss.append(0)
             temp_train_coor_loss.append(0)
 
-            # NOTE: save generated images for testing
-            for k in range(first_n_frame_dynamics+1):
-                save_image(frames[k][0], os.path.join(pred_save_img_dir, '{}.png'.format(k)))
-                save_image(frames[k][0], os.path.join(real_save_img_dir, '{}.png'.format(k)))
+            # save generated images for testing
+            if save_frames_every is not None and i % save_frames_every == 0:
+                epoch_train_save_img_dir = os.path.join(os.path.join(save_img_dir, str(i)), 'train')
+                pred_save_img_dir = os.path.join(epoch_train_save_img_dir, 'pred')
+                real_save_img_dir = os.path.join(epoch_train_save_img_dir, 'real')
+                os.makedirs(pred_save_img_dir, exist_ok=True)
+                os.makedirs(real_save_img_dir, exist_ok=True)
+                for k in range(first_n_frame_dynamics+1):
+                    save_image(frames[k][0], os.path.join(pred_save_img_dir, '{}.png'.format(k)))
+                    save_image(frames[k][0], os.path.join(real_save_img_dir, '{}.png'.format(k)))
 
             for k, pred_images in enumerate(pred_images_seq[:-1]):
-                # NOTE: save generated images for testing
-                save_image(pred_images[0], os.path.join(pred_save_img_dir, '{}.png'.format(k+first_n_frame_dynamics+1)))
-                save_image(frames[k+first_n_frame_dynamics+1][0], os.path.join(real_save_img_dir, '{}.png'.format(k+first_n_frame_dynamics+1)))
+                # save generated images for testing
+                if save_frames_every is not None and i % save_frames_every == 0:
+                    save_image(pred_images[0], os.path.join(pred_save_img_dir, '{}.png'.format(k+first_n_frame_dynamics+1)))
+                    save_image(frames[k+first_n_frame_dynamics+1][0], os.path.join(real_save_img_dir, '{}.png'.format(k+first_n_frame_dynamics+1)))
                 
                 frames_k = frames[k+first_n_frame_dynamics+1].to(device)
                 img_loss = image_loss(pred_images, frames_k)
@@ -113,6 +131,7 @@ def main(cfg, task_type, frame_path, train_label_path, val_label_path, test_labe
                 coordinate_loss = coordinate_mse_loss(pred_coordinates_seq[k], coordinates_k.float())
                 gen_loss += coordinate_loss
                 temp_train_coor_loss[-1] += coordinate_loss.data.item() * retrieved_batch_size
+
             temp_train_image_loss[-1] /= seq_len
             temp_train_coor_loss[-1] /= seq_len
             
@@ -194,15 +213,22 @@ def main(cfg, task_type, frame_path, train_label_path, val_label_path, test_labe
                 temp_val_image_loss.append(0)
                 temp_val_coor_loss.append(0)
 
-                # NOTE: save generated images for testing
-                for k in range(first_n_frame_dynamics+1):
-                    save_image(frames[k][0], os.path.join(pred_save_img_dir, '{}.png'.format(k)))
-                    save_image(frames[k][0], os.path.join(real_save_img_dir, '{}.png'.format(k)))
+                # save generated images for testing
+                if save_frames_every is not None and i % save_frames_every == 0:
+                    epoch_val_save_img_dir = os.path.join(os.path.join(save_img_dir, str(i)), 'val')
+                    pred_save_img_dir = os.path.join(epoch_val_save_img_dir, 'pred')
+                    real_save_img_dir = os.path.join(epoch_val_save_img_dir, 'real')
+                    os.makedirs(pred_save_img_dir, exist_ok=True)
+                    os.makedirs(real_save_img_dir, exist_ok=True)
+                    for k in range(first_n_frame_dynamics+1):
+                        save_image(frames[k][0], os.path.join(pred_save_img_dir, '{}.png'.format(k)))
+                        save_image(frames[k][0], os.path.join(real_save_img_dir, '{}.png'.format(k)))
 
                 for k, pred_images in enumerate(pred_images_seq[:-1]):
-                    # NOTE: save generated images for testing
-                    save_image(pred_images[0], os.path.join(pred_save_img_dir, '{}.png'.format(k+first_n_frame_dynamics+1)))
-                    save_image(frames[k+first_n_frame_dynamics+1][0], os.path.join(real_save_img_dir, '{}.png'.format(k+first_n_frame_dynamics+1)))
+                    # save generated images for testing
+                    if save_frames_every is not None and i % save_frames_every == 0:
+                        save_image(pred_images[0], os.path.join(pred_save_img_dir, '{}.png'.format(k+first_n_frame_dynamics+1)))
+                        save_image(frames[k+first_n_frame_dynamics+1][0], os.path.join(real_save_img_dir, '{}.png'.format(k+first_n_frame_dynamics+1)))
                     
                     frames_k = frames[k+first_n_frame_dynamics+1].to(device)
                     img_loss = image_loss(pred_images, frames_k)
@@ -229,9 +255,25 @@ def main(cfg, task_type, frame_path, train_label_path, val_label_path, test_labe
         stats['val']['image_loss'].append(sum(temp_val_image_loss) / total_cnt)
         stats['val']['coordinate_loss'].append(sum(temp_val_coor_loss) / total_cnt)
 
-        with open(os.path.join(save_stats_path, '{}.txt'.format(experiment_id)), 'w') as f:
+        if stats['val']['classification_loss'][-1] < min_val_classification_loss:
+            min_val_classification_loss = stats['val']['classification_loss'][-1]
+            min_val_classification_epoch = i
+            torch.save(generator, os.path.join(experiment_save_path, 'classification_model'))
+        if stats['val']['image_loss'][-1] < min_val_image_loss:
+            min_val_image_loss = stats['val']['image_loss'][-1]
+            min_val_image_epoch = i
+            torch.save(generator, os.path.join(experiment_save_path, 'image_model'))
+        if stats['val']['coordinate_loss'][-1] < min_val_coordinate_loss:
+            min_val_coordinate_loss = stats['val']['coordinate_loss'][-1]
+            min_val_coordinate_epoch = i
+            torch.save(generator, os.path.join(experiment_save_path, 'coordinate_model'))
+
+        with open(os.path.join(experiment_save_path, 'log.txt'), 'w') as f:
             f.write('{}\n'.format(cfg))
-            f.write('{}'.format(stats))
+            f.write('{}\n'.format(stats))
+            f.write('Min classification_loss: epoch {}, {}\n'.format(min_val_classification_epoch, min_val_classification_loss))
+            f.write('Min image_loss: epoch {}, {}\n'.format(min_val_image_epoch, min_val_image_loss))
+            f.write('Min coordinate_loss: epoch {}, {}'.format(min_val_coordinate_epoch, min_val_coordinate_loss))
             f.close()
 
 
@@ -248,8 +290,7 @@ if __name__ == '__main__':
     train_label_path = cfg['train_label_path']
     val_label_path = cfg['val_label_path']
     test_label_path = cfg['test_label_path']
-    save_stats_path = cfg['save_stats_path']
-    save_generated_images_path = cfg['save_generated_images_path']
+    save_path = cfg['save_path']
     num_epoch = cfg['num_epoch']
     batch_size = cfg['batch_size']
     teacher_forcing_prob = cfg['teacher_forcing_prob']
@@ -269,4 +310,4 @@ if __name__ == '__main__':
     # assert discriminator_window > 0 and type(discriminator_window) == int
     assert learning_rate > 0
 
-    main(cfg, task_type, frame_path, train_label_path, val_label_path, test_label_path, save_stats_path, save_generated_images_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, None, learning_rate)
+    main(cfg, task_type, frame_path, train_label_path, val_label_path, test_label_path, save_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, None, learning_rate, save_frames_every)

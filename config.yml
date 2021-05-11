@@ -6,8 +6,8 @@ test_label_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/c
 video_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/videos"
 data_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/data"
 train_val_test_splits: [0.6, 0.2, 0.2]
-save_stats_path: "experiments"
-save_generated_images_path: '/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/generations'
+save_path: "experiments"
+save_frames_every: 10
 
 # hyperparameters
 num_epoch: 10

@@ -43,22 +43,40 @@ def save_data(data, start_idx, end_idx, label_path, task_type):
         # for each object for object tracking
         for obj in sample_data:
             obj_coordinates = []
-            # TODO: ignore red ball for each task
             initial_coordinates = [float(obj[3]), float(obj[5]), float(obj[7]), float(obj[9]), float(obj[11]), float(obj[13])]
             if task_type == 'contact':
+                # skip red ball
                 red_ball_initial_coordinates = [5, 5, 2, 0, 0, 0]
-            if initial_coordinates == red_ball_initial_coordinates:
-                # skip if red ball
-                continue
+                if initial_coordinates == red_ball_initial_coordinates:
+                    continue
+            elif task_type == 'contain':
+                # skip object holders
+                object_holders = ['Pot_v1_001', 'Cylinder001', 'Glass', 'CardboardBox1', 'revolvedSurface1']
+                obj_name = str(obj[0])
+                if obj_name in object_holders:
+                    continue
             # ignore object name
             for j in range(1, len(obj), 13):
                 obj_coordinates.append([float(obj[j+2]), float(obj[j+4]), float(obj[j+6]), float(obj[j+8]), float(obj[j+10]), float(obj[j+12])])
-            # TODO: get classification label for each task
+            # get classification label for each task
             if task_type == 'contact':
+                # if last x-coordinate or y-coordinate changes significantly
                 if abs(obj_coordinates[0][0] - obj_coordinates[-1][0]) >= 0.05 or abs(obj_coordinates[0][1] - obj_coordinates[-1][1]) >= 0.05:
                     obj_coordinates.append([1])
                 else:
                     obj_coordinates.append([0])
+            elif task_type == 'contain':
+                # if last y-coordinate is < -0.9200618605613708
+                if obj_coordinates[-1][1] < -0.9200618605613708:
+                    obj_coordinates.append([0])
+                else:
+                    obj_coordinates.append([1])
+            elif task_type == 'stability':
+                # if any of the rotation changes > 0.1
+                if abs(obj_coordinates[0][3] - obj_coordinates[-1][3]) >= 0.1 or abs(obj_coordinates[0][4] - obj_coordinates[-1][4]) >= 0.1 or abs(obj_coordinates[0][5] - obj_coordinates[-1][5]) >= 0.1:
+                    obj_coordinates.append([0])
+                else:
+                    obj_coordinates.append([1])
             output_data[sample_num].append(obj_coordinates)
     with open(label_path, 'w') as fp:
         json.dump(output_data, fp)
