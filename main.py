@@ -291,6 +291,7 @@ if __name__ == '__main__':
     val_label_path = cfg['val_label_path']
     test_label_path = cfg['test_label_path']
     save_path = cfg['save_path']
+    save_frames_every = cfg['save_frames_every']
     num_epoch = cfg['num_epoch']
     batch_size = cfg['batch_size']
     teacher_forcing_prob = cfg['teacher_forcing_prob']
