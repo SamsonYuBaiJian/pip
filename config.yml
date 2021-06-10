@@ -15,5 +15,4 @@ batch_size: 8
 teacher_forcing_prob: 0.7
 first_n_frame_dynamics: 5
 frame_interval: 2
-# discriminator_window: 3
 learning_rate: 0.001

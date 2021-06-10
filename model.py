@@ -112,28 +112,3 @@ class Generator(nn.Module):
             out = self.stability(x)
 
         return out, decoded_images, pred_coordinates
-
-
-# class Discriminator(nn.Module):
-#     def __init__(self, discriminator_window):
-#         super(Discriminator, self).__init__()
-
-#         self.conv1 = nn.Conv2d(3 * discriminator_window, 16, 3, stride=2, padding=1)
-#         self.conv2 = nn.Conv2d(16, 32, 3, stride=2, padding=1)
-#         self.conv3 = nn.Conv2d(32, 1, 3, stride=2, padding=1)
-        
-#         self.leaky_relu = nn.LeakyReLU(0.2)
-
-#     def forward(self, dis_pred_images_seq, dis_frames_seq, device):
-#         assert len(dis_frames_seq) == len(dis_pred_images_seq)
-#         dis_pred_images_seq = torch.cat(dis_pred_images_seq, dim=1)
-#         dis_frames_seq = torch.cat(dis_frames_seq, dim=1)
-#         dis_frames_seq = dis_frames_seq.to(device)
-#         images = torch.cat([dis_pred_images_seq, dis_frames_seq], dim=0)
-
-#         images = images.to(device)
-#         x = self.leaky_relu(self.conv1(images))
-#         x = self.leaky_relu(self.conv2(x))
-#         out = self.leaky_relu(self.conv3(x))
-
-#         return out
