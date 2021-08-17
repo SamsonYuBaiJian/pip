@@ -1,114 +1,453 @@
 import torch
 import torch.nn as nn
+import torchvision.models as models
+import math
 
 
-class Generator(nn.Module):
-    def __init__(self, first_n_frame_dynamics):
-        super(Generator, self).__init__()
+class Model(nn.Module):
+    def __init__(self, device, nc=3, nf=16, span_num=1):
+        super(Model, self).__init__()
+        # generation
+        self.c1 = dcgan_conv(nc, nf, stride=1)  # input is (3) x 128 x 128
+        self.c2 = dcgan_conv(nf, 2*nf, stride=1)
+        self.c3 = dcgan_conv(2*nf, 4*nf, stride=2)
+        self.c4 = dcgan_conv(4*nf, 4*nf, stride=1)
+        self.c5 = dcgan_conv(4*nf, 8*nf, stride=2)
+        self.c6 = dcgan_conv(8*nf, 8*nf, stride=1)
+        self.ConvLSTMCell1 = ConvLSTMCell(input_shape=(32,32), input_dim=8*nf, hidden_dim=8*nf, kernel_size=(3,3), device=device)
+        self.ConvLSTMCell2 = ConvLSTMCell(input_shape=(32,32), input_dim=8*nf, hidden_dim=8*nf, kernel_size=(3,3), device=device)
+        self.ConvLSTMCell3 = ConvLSTMCell(input_shape=(32,32), input_dim=8*nf, hidden_dim=8*nf, kernel_size=(3,3), device=device)
+        self.upc1 = dcgan_upconv(8*nf*2, 8*nf, stride=1)
+        self.upc2 = dcgan_upconv(8*nf*2, 4*nf, stride=2)
+        self.upc3 = dcgan_upconv(4*nf*2, 4*nf, stride=1)
+        self.upc4 = dcgan_upconv(4*nf*2, 2*nf, stride=2)
+        self.upc5 = dcgan_upconv(2*nf*2, nf, stride=1)
+        self.upc6 = nn.ConvTranspose2d(in_channels=nf*2,out_channels=nc,kernel_size=(3,3),stride=1,padding=1,output_padding=0)
 
-        # frame encoder
-        self.conv1 = nn.Conv2d(3 * (first_n_frame_dynamics + 1), 16, 3, stride=2, padding=1)
-        self.conv2 = nn.Conv2d(16, 32, 3, stride=2, padding=1)
-        self.conv3 = nn.Conv2d(32, 8, 3, stride=2, padding=1)
-        self.flatten = nn.Flatten()
+        # span selector
+        self.span_predict = SpanPredict(span_num, device)
+        self.device = device
 
-        # coordinate encoder
-        self.coor = nn.Linear(6 * (first_n_frame_dynamics + 1), 64)
-
-        # LSTM
-        self.lstm_cell1 = nn.LSTMCell(8192 + 64, 2048 + 64)
-        self.lstm_cell2 = nn.LSTMCell(2048 + 64, 2048 + 64)
-
-        # coordinate decoder
-        self.d_coor = nn.Linear(64, 6)
-
-        # frame decoder
-        self.upsample1 = nn.Upsample(scale_factor=4)
-        self.upsample2 = nn.Upsample(scale_factor=2)
-        self.d_conv1 = nn.Conv2d(8, 32, 3, padding=1)
-        self.d_conv2 = nn.Conv2d(32 * 2, 16, 3, padding=1)
-        self.d_conv3 = nn.Conv2d(16 * 2, 3, 3, padding=1)
-
-        # shared FC layer
-        self.fc = nn.Linear(2048 + 64, 128)
-
-        # task specific FC layers
-        self.contain = nn.Linear(128, 1)
-        self.contact = nn.Linear(128, 1)
-        self.stability = nn.Linear(128, 1)
-
-
-    def forward(self, task, coordinates, images, teacher_forcing_batch, first_n_frame_dynamics, device):
+    def forward(self, task, images, masks, teacher_forcing_batch, first_n_frame_dynamics, max_seq_len):
         sequence_len = len(images)
         batch_size, channels, height, width = images[0].shape
+        images_first_n_frames = []
         decoded_images = []
-        pred_coordinates = []
         assert first_n_frame_dynamics < sequence_len
 
-        # stack first n frames into input for model to learn initial dynamics
-        first_n_images_i = torch.zeros(batch_size, channels * (first_n_frame_dynamics + 1), height, width)
-        first_n_coordinates_i = torch.zeros(batch_size, 6 * (first_n_frame_dynamics + 1)).float()
-        for i in range(first_n_frame_dynamics):
-            first_n_images_i[:,i*channels:(i+1)*channels,:,:] = images[i]
-            first_n_coordinates_i[:,i*6:(i+1)*6] = torch.stack(coordinates[i]).T
+        for i in range(sequence_len):
+            if i <= first_n_frame_dynamics:
+                # encode frames
+                images_i = images[i].to(self.device)
+                images_first_n_frames.append(images_i)
 
-        for i in range(first_n_frame_dynamics, sequence_len):
-            images_i = first_n_images_i.clone()
-            coordinates_i = first_n_coordinates_i.clone()
-            if i == first_n_frame_dynamics:
-                images_i[:,first_n_frame_dynamics*channels:,:,:] = images[i]
-                coordinates_i[:,first_n_frame_dynamics*6:] = torch.stack(coordinates[i]).T
             elif i > first_n_frame_dynamics:
+                images_i = images[i].to(self.device)
                 for j in range(batch_size):
                     # teacher forcing
-                    if teacher_forcing_batch[j]:
-                        images_i[j,first_n_frame_dynamics*channels:,:,:] = images[i][j]
-                        coordinates_i[j,first_n_frame_dynamics*6:] = torch.stack(coordinates[i]).T[j]
-                    # no teacher forcing, use outputs from previous timestep
-                    else:
-                        images_i[j,first_n_frame_dynamics*channels:,:,:] = decoded_frame[j]
-                        coordinates_i[j,first_n_frame_dynamics*6:] = decoded_coordinates[j]
-            images_i = images_i.to(device)
-            coordinates_i = coordinates_i.to(device)
+                    if not teacher_forcing_batch[j]:
+                        images_i[j] = decoded_frame[j]
 
-            # encode frames
-            conv1_feat = torch.relu(self.conv1(images_i))
-            conv2_feat = torch.relu(self.conv2(conv1_feat))
-            conv3_feat = torch.relu(self.conv3(conv2_feat))
-            conv_flattened = self.flatten(conv3_feat)
-
-            # encode coordinates input for object identification/tracking
-            coor_feat = torch.relu(self.coor(coordinates_i))
-
-            # merge encoded features
-            concat_feat = torch.cat([conv_flattened, coor_feat], dim=1)
-
-            # LSTM processing
-            if i == first_n_frame_dynamics:
-                hx1, cx1 = self.lstm_cell1(concat_feat)
-                hx2, cx2 = self.lstm_cell2(hx1)
+            # encode
+            inp_1 = self.c1(images_i)
+            inp_2 = self.c2(inp_1)
+            inp_3 = self.c3(inp_2)
+            inp_4 = self.c4(inp_3)
+            inp_5 = self.c5(inp_4)
+            lstm_inp = self.c6(inp_5)
+            
+            # ConvLSTM
+            if i == 0:
+                hx1, cx1 = self.ConvLSTMCell1(lstm_inp, batch_size)
+                hx2, cx2 = self.ConvLSTMCell2(hx1, batch_size)
+                hx3, cx3 = self.ConvLSTMCell3(hx2, batch_size)
             else:
-                hx1, cx1 = self.lstm_cell1(concat_feat, (hx1, cx1))
-                hx2, cx2 = self.lstm_cell2(hx1, (hx2, cx2))
+                hx1, cx1 = self.ConvLSTMCell1(lstm_inp, batch_size, (hx1, cx1))
+                hx2, cx2 = self.ConvLSTMCell2(hx1, batch_size, (hx2, cx2))
+                hx3, cx3 = self.ConvLSTMCell3(hx2, batch_size, (hx3, cx3))
 
-            # decode next coordinate predictions
-            decoded_coordinates = hx2[:,2048:]
-            decoded_coordinates = torch.relu(self.d_coor(decoded_coordinates))
-            pred_coordinates.append(decoded_coordinates)
+            # decode
+            if i >= first_n_frame_dynamics and i <= max_seq_len:
+                # decode frames
+                out_1 = self.upc1(torch.cat([hx3, lstm_inp], dim=1))
+                out_2 = self.upc2(torch.cat([out_1, inp_5], dim=1))
+                out_3 = self.upc3(torch.cat([out_2, inp_4], dim=1))
+                out_4 = self.upc4(torch.cat([out_3, inp_3], dim=1))
+                out_5 = self.upc5(torch.cat([out_4, inp_2], dim=1))
+                decoded_frame = self.upc6(torch.cat([out_5, inp_1], dim=1))
+                decoded_images.append(decoded_frame)
 
-            # decode next frame predictions
-            decoded_frame = torch.reshape(hx2[:,:2048], (batch_size, 8, 16, 16))
-            decoded_frame = torch.relu(self.d_conv1(self.upsample1(decoded_frame)))
-            decoded_frame = torch.relu(self.d_conv2(self.upsample2(torch.cat([decoded_frame, conv2_feat], dim=1))))
-            decoded_frame = torch.relu(self.d_conv3(self.upsample2(torch.cat([decoded_frame, conv1_feat], dim=1))))
-            decoded_images.append(decoded_frame)
+        images_first_n_frames = torch.stack(images_first_n_frames).permute(1, 2, 0, 3, 4).to(self.device)   # batch_size, channels, seq_len, height, width
+        masks_first_n_frames = torch.stack(masks).permute(1, 2, 0, 3, 4).to(self.device)    # batch_size, 1, seq_len, height, width
+        classification, all_r, jsd_loss = self.span_predict(decoded_images, images_first_n_frames, masks_first_n_frames.repeat((1, 3, 1, 1, 1)))
+
+        return classification, decoded_images, all_r, jsd_loss
+
+
+class SpanPredict(nn.Module):
+    def __init__(self, span_num, device):
+        super(SpanPredict, self).__init__()
+        # span weights
+        self.weights_z = nn.Parameter(torch.randn((2048+512*3), requires_grad=True))
+        self.span_weights_p = nn.ParameterList([nn.Parameter(torch.randn((2048+512*3), requires_grad=True)) for i in range(span_num)])
+        self.span_weights_q = nn.ParameterList([nn.Parameter(torch.randn((2048+512*3), requires_grad=True)) for i in range(span_num)])
+        self.mixing_coefficients = nn.Parameter(torch.randn((1, 1, span_num), requires_grad=True)) # 1, 1, num_spans
+
+        # encoders
+        resnet50 = models.resnet50(pretrained=True)
+        removed = list(resnet50.children())[:-1]
+        self.frame_encoder = torch.nn.Sequential(*removed)
+        # pretrain = torch.load('r3d50_K_200ep.pth', map_location='cpu')
+        self.first_n_frames_encoder = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
+        # self.first_n_frames_encoder.load_state_dict(pretrain['state_dict'])
+        self.first_n_masks_encoder = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
+        # self.first_n_masks_encoder.load_state_dict(pretrain['state_dict'])
+        self.global_context = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
+        # self.global_context.load_state_dict(pretrain['state_dict'])
         
-        x = torch.relu(self.fc(hx2))
-        if task == 'contact':
-            out = self.contact(x)
-        elif task == 'contain':
-            out = self.contain(x)
-        elif task == 'stability':
-            out = self.stability(x)
+        self.span_weights_softmax = nn.Softmax(dim=1)
+        self.mixing_coeff_softmax = nn.Softmax(dim=2)
+        self.span_num = span_num
 
-        return out, decoded_images, pred_coordinates
+    def forward(self, inp_decoded_images, images_first_n_frames, masks_first_n_frames, eps=1e-8):
+        inp_decoded_images = torch.stack(inp_decoded_images)    # seq_len, batch_size, channels, width, height
+        decoded_images = inp_decoded_images.permute(1, 0, 2, 3, 4) # batch_size, seq_len, channels, width, height
+        B, S, C, W, H = decoded_images.shape
+        decoded_images = decoded_images.reshape(B*S, C, W, H)
+        # get individual frame features
+        decoded_image_feats = self.frame_encoder(decoded_images)
+        decoded_image_feats = torch.squeeze(decoded_image_feats)
+        _, decoded_image_feat_size = decoded_image_feats.shape
+        decoded_image_feats = decoded_image_feats.reshape(B, S, decoded_image_feat_size) # batch_size, seq_len, image_feature_size
+        # add first n frames and masks information
+        encoded_first_n_frames = torch.unsqueeze(self.first_n_frames_encoder(images_first_n_frames), dim=1) # batch_size, 1, encoded_feature_size
+        encoded_first_n_masks = torch.unsqueeze(self.first_n_masks_encoder(masks_first_n_frames), dim=1)    # batch_size, 1, encoded_feature_size
+        encoded_global_context = torch.unsqueeze(self.global_context(inp_decoded_images.permute(1, 2, 0, 3, 4)), dim=1) # batch_size, 1, encoded_feature_size
+        final_image_features = torch.cat([decoded_image_feats, encoded_first_n_frames.repeat((1, S, 1)), encoded_first_n_masks.repeat((1, S, 1)), encoded_global_context.repeat((1, S, 1))], dim=2)
+
+        all_r = []
+        for i in range(self.span_num):
+            softmax_p = self.span_weights_softmax(torch.matmul(final_image_features, self.span_weights_p[i])) # batch_size, seq_len
+            softmax_q = self.span_weights_softmax(torch.matmul(final_image_features, self.span_weights_q[i])) # batch_size, seq_len
+            softmax_q_flipped = torch.flip(softmax_q, (1,)) # batch_size, seq_len
+            p = torch.cumsum(softmax_p, dim=1)  # batch_size, seq_len
+            q = torch.cumsum(softmax_q_flipped, dim=1)  # batch_size, seq_len
+            q = torch.flip(q, (1,)) # batch_size, seq_len
+            # r shows the contribution of each frame
+            r = p*q
+            r = r / (torch.sum(r) + eps)
+            all_r.append(r)
+        
+        # TODO: check
+        all_r = torch.stack(all_r).permute(1, 2, 0) # batch_size, seq_len, span_num
+
+        # TODO: Jensen-Shannon divergence loss
+        pi_r = self.mixing_coeff_softmax(self.mixing_coefficients) * all_r  # batch_size, seq_len, span_num
+        overlap_p = torch.sum(pi_r, dim=2)  # batch_size, seq_len
+        log_overlap_p = torch.log(overlap_p + 1e-40)    # batch_size, seq_len
+        overlap_p_entropy = torch.sum(-overlap_p*log_overlap_p, dim=1) # batch_size
+        log_all_r = torch.log(all_r + 1e-40)    # batch_size, seq_len, span_num
+        conciseness_p_entropy = torch.sum(-all_r*log_all_r, dim=1)    # batch_size, span_num
+        conciseness_p_entropy = torch.sum(torch.squeeze(self.mixing_coeff_softmax(self.mixing_coefficients), dim=1)*conciseness_p_entropy, dim=1)   # batch_size
+        jsd_loss = overlap_p_entropy - conciseness_p_entropy
+
+        all_r = torch.unsqueeze(all_r, dim=3)   # batch_size, seq_len, span_num, 1
+        final_image_features = torch.unsqueeze(final_image_features, dim=2)   # batch_size, seq_len, 1, image_feature_size
+
+        m = all_r * final_image_features # batch_size, seq_len, span_num, image_feature_size
+        m = m.permute(0, 2, 1, 3)   # batch_size, span_num, seq_len, image_feature_size
+        averaged_m = torch.mean(m, dim=2)   # batch_size, span_num, image_feature_size
+        z = torch.matmul(averaged_m, self.weights_z)    # batch_size, span_num
+        # print(m, z, self.weights_z, averaged_m)
+        out = torch.unsqueeze(torch.sum(z, dim=1), dim=1)    # batch_size, 1
+        print(out, jsd_loss)
+
+        return out, torch.squeeze(all_r, 3).permute(0, 2, 1), jsd_loss
+
+
+class ConvLSTMCell(nn.Module):
+    def __init__(self, input_shape, input_dim, hidden_dim, kernel_size, device, bias=1):              
+        """
+        input_shape: (int, int)
+            Height and width of input tensor as (height, width).
+        input_dim: int
+            Number of channels of input tensor.
+        hidden_dim: int
+            Number of channels of hidden state.
+        kernel_size: (int, int)
+            Size of the convolutional kernel.
+        bias: bool
+            Whether or not to add the bias.
+        """
+        super(ConvLSTMCell, self).__init__()
+        
+        self.height, self.width = input_shape
+        self.input_dim  = input_dim
+        self.hidden_dim = hidden_dim
+        self.kernel_size = kernel_size
+        self.padding     = kernel_size[0] // 2, kernel_size[1] // 2
+        self.bias        = bias
+        
+        self.conv = nn.Conv2d(in_channels=self.input_dim + self.hidden_dim,
+                              out_channels=4 * self.hidden_dim,
+                              kernel_size=self.kernel_size,
+                              padding=self.padding, bias=self.bias)
+
+        self.input_shape = input_shape
+        self.device = device
+                 
+    # we implement LSTM that process only one timestep 
+    def forward(self, x, batch_size , hidden=None): # x [batch, hidden_dim, width, height]
+        if hidden is None:
+            h_cur, c_cur = self.init_hidden(batch_size)
+        else:
+            h_cur, c_cur = hidden
+        
+        combined = torch.cat([x, h_cur], dim=1)  # concatenate along channel axis
+        combined_conv = self.conv(combined)
+        cc_i, cc_f, cc_o, cc_g = torch.split(combined_conv, self.hidden_dim, dim=1) 
+        i = torch.sigmoid(cc_i)
+        f = torch.sigmoid(cc_f)
+        o = torch.sigmoid(cc_o)
+        g = torch.tanh(cc_g)
+
+        c_next = f * c_cur + i * g
+        h_next = o * torch.tanh(c_next)
+        return h_next, c_next
+
+    def init_hidden(self, batch_size):
+        init_h = torch.zeros(batch_size, self.hidden_dim, self.input_shape[0], self.input_shape[1]).to(self.device)
+        init_c = torch.zeros(batch_size, self.hidden_dim, self.input_shape[0], self.input_shape[1]).to(self.device)
+
+        return init_h, init_c    
+
+
+class dcgan_conv(nn.Module):
+    def __init__(self, nin, nout, stride):
+        super(dcgan_conv, self).__init__()
+        self.main = nn.Sequential(
+                nn.Conv2d(in_channels=nin, out_channels=nout, kernel_size=(3,3), stride=stride, padding=1),
+                nn.GroupNorm(16,nout),
+                nn.LeakyReLU(0.2, inplace=True),
+                )
+
+    def forward(self, inp):
+        return self.main(inp)
+
+
+class dcgan_upconv(nn.Module):
+    def __init__(self, nin, nout, stride):
+        super(dcgan_upconv, self).__init__()
+        if (stride ==2):
+            output_padding = 1
+        else:
+            output_padding = 0
+        self.main = nn.Sequential(
+                nn.ConvTranspose2d(in_channels=nin,out_channels=nout,kernel_size=(3,3), stride=stride,padding=1,output_padding=output_padding),
+                nn.GroupNorm(16,nout),
+                nn.LeakyReLU(0.2, inplace=True),
+                )
+
+    def forward(self, inp):
+        return self.main(inp)
+
+
+
+def conv3x3x3(in_planes, out_planes, stride=1):
+    return nn.Conv3d(in_planes,
+                     out_planes,
+                     kernel_size=3,
+                     stride=stride,
+                     padding=1,
+                     bias=False)
+
+
+def conv1x1x1(in_planes, out_planes, stride=1):
+    return nn.Conv3d(in_planes,
+                     out_planes,
+                     kernel_size=1,
+                     stride=stride,
+                     bias=False)
+
+
+class BasicBlock(nn.Module):
+    expansion = 1
+
+    def __init__(self, in_planes, planes, stride=1, downsample=None):
+        super().__init__()
+
+        self.conv1 = conv3x3x3(in_planes, planes, stride)
+        self.bn1 = nn.BatchNorm3d(planes)
+        self.relu = nn.ReLU(inplace=True)
+        self.conv2 = conv3x3x3(planes, planes)
+        self.bn2 = nn.BatchNorm3d(planes)
+        self.downsample = downsample
+        self.stride = stride
+
+    def forward(self, x):
+        residual = x
+
+        out = self.conv1(x)
+        out = self.bn1(out)
+        out = self.relu(out)
+
+        out = self.conv2(out)
+        out = self.bn2(out)
+
+        if self.downsample is not None:
+            residual = self.downsample(x)
+
+        out += residual
+        out = self.relu(out)
+
+        return out
+
+
+def get_inplanes():
+    return [64, 128, 256, 512]
+
+
+class ResNet(nn.Module):
+
+    def __init__(self,
+                 block,
+                 layers,
+                 block_inplanes,
+                 n_input_channels=3,
+                 conv1_t_size=7,
+                 conv1_t_stride=1,
+                 no_max_pool=False,
+                 shortcut_type='B',
+                 widen_factor=1.0,
+                 n_classes=400):
+        super().__init__()
+
+        block_inplanes = [int(x * widen_factor) for x in block_inplanes]
+
+        self.in_planes = block_inplanes[0]
+        self.no_max_pool = no_max_pool
+
+        self.conv1 = nn.Conv3d(n_input_channels,
+                               self.in_planes,
+                               kernel_size=(conv1_t_size, 7, 7),
+                               stride=(conv1_t_stride, 2, 2),
+                               padding=(conv1_t_size // 2, 3, 3),
+                               bias=False)
+        self.bn1 = nn.BatchNorm3d(self.in_planes)
+        self.relu = nn.ReLU(inplace=True)
+        self.maxpool = nn.MaxPool3d(kernel_size=3, stride=2, padding=1)
+        self.layer1 = self._make_layer(block, block_inplanes[0], layers[0],
+                                       shortcut_type)
+        self.layer2 = self._make_layer(block,
+                                       block_inplanes[1],
+                                       layers[1],
+                                       shortcut_type,
+                                       stride=2)
+        self.layer3 = self._make_layer(block,
+                                       block_inplanes[2],
+                                       layers[2],
+                                       shortcut_type,
+                                       stride=2)
+        self.layer4 = self._make_layer(block,
+                                       block_inplanes[3],
+                                       layers[3],
+                                       shortcut_type,
+                                       stride=2)
+
+        self.avgpool = nn.AdaptiveAvgPool3d((1, 1, 1))
+        self.fc = nn.Linear(block_inplanes[3] * block.expansion, n_classes)
+
+        for m in self.modules():
+            if isinstance(m, nn.Conv3d):
+                nn.init.kaiming_normal_(m.weight,
+                                        mode='fan_out',
+                                        nonlinearity='relu')
+            elif isinstance(m, nn.BatchNorm3d):
+                nn.init.constant_(m.weight, 1)
+                nn.init.constant_(m.bias, 0)
+
+    def _downsample_basic_block(self, x, planes, stride):
+        out = F.avg_pool3d(x, kernel_size=1, stride=stride)
+        zero_pads = torch.zeros(out.size(0), planes - out.size(1), out.size(2),
+                                out.size(3), out.size(4))
+        if isinstance(out.data, torch.cuda.FloatTensor):
+            zero_pads = zero_pads.cuda()
+
+        out = torch.cat([out.data, zero_pads], dim=1)
+
+        return out
+
+    def _make_layer(self, block, planes, blocks, shortcut_type, stride=1):
+        downsample = None
+        if stride != 1 or self.in_planes != planes * block.expansion:
+            if shortcut_type == 'A':
+                downsample = partial(self._downsample_basic_block,
+                                     planes=planes * block.expansion,
+                                     stride=stride)
+            else:
+                downsample = nn.Sequential(
+                    conv1x1x1(self.in_planes, planes * block.expansion, stride),
+                    nn.BatchNorm3d(planes * block.expansion))
+
+        layers = []
+        layers.append(
+            block(in_planes=self.in_planes,
+                  planes=planes,
+                  stride=stride,
+                  downsample=downsample))
+        self.in_planes = planes * block.expansion
+        for i in range(1, blocks):
+            layers.append(block(self.in_planes, planes))
+
+        return nn.Sequential(*layers)
+
+    def forward(self, x):
+        x = self.conv1(x)
+        x = self.bn1(x)
+        x = self.relu(x)
+        if not self.no_max_pool:
+            x = self.maxpool(x)
+
+        x = self.layer1(x)
+        x = self.layer2(x)
+        x = self.layer3(x)
+        x = self.layer4(x)
+
+        x = self.avgpool(x)
+
+        x = x.view(x.size(0), -1)
+        # x = self.fc(x)
+
+        return x
+
+
+def load_pretrained_model(model, pretrain_path):
+    # if pretrain_path:
+    print('loading pretrained model {}'.format(pretrain_path))
+    pretrain = torch.load(pretrain_path, map_location='cpu')
+
+    model.load_state_dict(pretrain['state_dict'])
+    model.fc = nn.Linear(model.fc.in_features, n_finetune_classes)
+
+    return model
+
+
+# def get_fine_tuning_parameters(model, ft_begin_index):
+#     if ft_begin_index == 0:
+#         return model.parameters()
+
+#     ft_module_names = []
+#     for i in range(ft_begin_index, 5):
+#         ft_module_names.append('layer{}'.format(ft_begin_index))
+#     ft_module_names.append('fc')
+
+#     parameters = []
+#     for k, v in model.named_parameters():
+#         for ft_module in ft_module_names:
+#             if ft_module in k:
+#                 parameters.append({'params': v})
+#                 break
+#         else:
+#             parameters.append({'params': v, 'lr': 0.0})
+
+#     return parameters

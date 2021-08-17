@@ -1,18 +1,24 @@
-task_type: 'contact'
-frame_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/frames"
-train_label_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/train.json"
-val_label_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/val.json"
-test_label_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/test.json"
-video_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/videos"
-data_path: "/mnt/c/Users/samso/Documents/SamsonYuBaiJian/SPECIAL/dataset/contact/data"
+task_type: 'contain'
+frame_path: "/home/samson/see-aaai/data/contain/frames"
+mask_path: "/home/samson/see-aaai/data/contain/masks"
+train_label_path: "/home/samson/see-aaai/data/contain/train.json"
+val_label_path: "/home/samson/see-aaai/data/contain/val.json"
+test_label_path: "/home/samson/see-aaai/data/contain/test.json"
+video_path: "/home/samson/see-aaai/data/contain/videos"
+data_path: "/home/samson/see-aaai/data/contain/data"
 train_val_test_splits: [0.6, 0.2, 0.2]
 save_path: "experiments"
-save_frames_every: 10
+save_frames_every: 1
+load_model_path: ""
+experiment_type: "train"
 
 # hyperparameters
-num_epoch: 10
+num_epoch: 30
 batch_size: 8
-teacher_forcing_prob: 0.7
+teacher_forcing_prob: 0.1
 first_n_frame_dynamics: 5
-frame_interval: 2
+frame_interval: 3
 learning_rate: 0.001
+max_seq_len: 25
+span_num: 3
+span_threshold: 1.e-10
