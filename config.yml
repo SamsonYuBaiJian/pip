@@ -16,9 +16,10 @@ experiment_type: "train"
 num_epoch: 30
 batch_size: 8
 teacher_forcing_prob: 0.1
-first_n_frame_dynamics: 5
-frame_interval: 3
+first_n_frame_dynamics: 3
+frame_interval: 2
 learning_rate: 0.001
 max_seq_len: 25
 span_num: 3
 span_threshold: 1.e-10
+jsd_theta: 0.5

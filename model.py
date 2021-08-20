@@ -2,10 +2,12 @@ import torch
 import torch.nn as nn
 import torchvision.models as models
 import math
+from transformers import BertModel
+from torchvision import transforms
 
 
 class Model(nn.Module):
-    def __init__(self, device, nc=3, nf=16, span_num=1):
+    def __init__(self, device, span_num=1, jsd_theta=0.5, nc=3, nf=16):
         super(Model, self).__init__()
         # generation
         self.c1 = dcgan_conv(nc, nf, stride=1)  # input is (3) x 128 x 128
@@ -25,10 +27,10 @@ class Model(nn.Module):
         self.upc6 = nn.ConvTranspose2d(in_channels=nf*2,out_channels=nc,kernel_size=(3,3),stride=1,padding=1,output_padding=0)
 
         # span selector
-        self.span_predict = SpanPredict(span_num, device)
+        self.span_predict = SpanPredict(span_num, jsd_theta, device)
         self.device = device
 
-    def forward(self, task, images, masks, teacher_forcing_batch, first_n_frame_dynamics, max_seq_len):
+    def forward(self, task, images, masks, queries, teacher_forcing_batch, first_n_frame_dynamics, max_seq_len):
         sequence_len = len(images)
         batch_size, channels, height, width = images[0].shape
         images_first_n_frames = []
@@ -79,18 +81,18 @@ class Model(nn.Module):
 
         images_first_n_frames = torch.stack(images_first_n_frames).permute(1, 2, 0, 3, 4).to(self.device)   # batch_size, channels, seq_len, height, width
         masks_first_n_frames = torch.stack(masks).permute(1, 2, 0, 3, 4).to(self.device)    # batch_size, 1, seq_len, height, width
-        classification, all_r, jsd_loss = self.span_predict(decoded_images, images_first_n_frames, masks_first_n_frames.repeat((1, 3, 1, 1, 1)))
+        classification, all_r, jsd_loss = self.span_predict(decoded_images, images_first_n_frames, masks_first_n_frames.repeat((1, 3, 1, 1, 1)), queries)
 
         return classification, decoded_images, all_r, jsd_loss
 
 
 class SpanPredict(nn.Module):
-    def __init__(self, span_num, device):
+    def __init__(self, span_num, jsd_theta, device):
         super(SpanPredict, self).__init__()
         # span weights
-        self.weights_z = nn.Parameter(torch.randn((2048+512*3), requires_grad=True))
-        self.span_weights_p = nn.ParameterList([nn.Parameter(torch.randn((2048+512*3), requires_grad=True)) for i in range(span_num)])
-        self.span_weights_q = nn.ParameterList([nn.Parameter(torch.randn((2048+512*3), requires_grad=True)) for i in range(span_num)])
+        self.weights_z = nn.Parameter(torch.randn((2048+512*3+768), requires_grad=True))
+        self.span_weights_p = nn.ParameterList([nn.Parameter(torch.randn((2048+512*3+768), requires_grad=True)) for i in range(span_num)])
+        self.span_weights_q = nn.ParameterList([nn.Parameter(torch.randn((2048+512*3+768), requires_grad=True)) for i in range(span_num)])
         self.mixing_coefficients = nn.Parameter(torch.randn((1, 1, span_num), requires_grad=True)) # 1, 1, num_spans
 
         # encoders
@@ -104,18 +106,26 @@ class SpanPredict(nn.Module):
         # self.first_n_masks_encoder.load_state_dict(pretrain['state_dict'])
         self.global_context = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
         # self.global_context.load_state_dict(pretrain['state_dict'])
+        self.bert = BertModel.from_pretrained('bert-base-uncased')
         
         self.span_weights_softmax = nn.Softmax(dim=1)
         self.mixing_coeff_softmax = nn.Softmax(dim=2)
         self.span_num = span_num
+        self.jsd_theta = jsd_theta
+        self.normalize = transforms.Compose([
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                         std=[0.229, 0.224, 0.225])
+        ])
+        self.device = device
 
-    def forward(self, inp_decoded_images, images_first_n_frames, masks_first_n_frames, eps=1e-8):
+    def forward(self, inp_decoded_images, images_first_n_frames, masks_first_n_frames, queries, eps=1e-8):
         inp_decoded_images = torch.stack(inp_decoded_images)    # seq_len, batch_size, channels, width, height
         decoded_images = inp_decoded_images.permute(1, 0, 2, 3, 4) # batch_size, seq_len, channels, width, height
         B, S, C, W, H = decoded_images.shape
         decoded_images = decoded_images.reshape(B*S, C, W, H)
         # get individual frame features
-        decoded_image_feats = self.frame_encoder(decoded_images)
+        normalized_decoded_images = self.normalize(decoded_images)
+        decoded_image_feats = self.frame_encoder(normalized_decoded_images)
         decoded_image_feats = torch.squeeze(decoded_image_feats)
         _, decoded_image_feat_size = decoded_image_feats.shape
         decoded_image_feats = decoded_image_feats.reshape(B, S, decoded_image_feat_size) # batch_size, seq_len, image_feature_size
@@ -123,7 +133,13 @@ class SpanPredict(nn.Module):
         encoded_first_n_frames = torch.unsqueeze(self.first_n_frames_encoder(images_first_n_frames), dim=1) # batch_size, 1, encoded_feature_size
         encoded_first_n_masks = torch.unsqueeze(self.first_n_masks_encoder(masks_first_n_frames), dim=1)    # batch_size, 1, encoded_feature_size
         encoded_global_context = torch.unsqueeze(self.global_context(inp_decoded_images.permute(1, 2, 0, 3, 4)), dim=1) # batch_size, 1, encoded_feature_size
-        final_image_features = torch.cat([decoded_image_feats, encoded_first_n_frames.repeat((1, S, 1)), encoded_first_n_masks.repeat((1, S, 1)), encoded_global_context.repeat((1, S, 1))], dim=2)
+        # add task type information
+        input_ids = torch.squeeze(queries['input_ids'], dim=1).to(self.device)
+        attention_mask = torch.squeeze(queries['attention_mask'], dim=1).to(self.device)
+        token_type_ids = torch.squeeze(queries['token_type_ids'], dim=1).to(self.device)
+        task_conditioning = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids).last_hidden_state[:,0,:]
+        task_conditioning = torch.unsqueeze(task_conditioning, dim=1)
+        final_image_features = torch.cat([decoded_image_feats, encoded_first_n_frames.repeat((1, S, 1)), encoded_first_n_masks.repeat((1, S, 1)), encoded_global_context.repeat((1, S, 1)), task_conditioning.repeat((1, S, 1))], dim=2)
 
         all_r = []
         for i in range(self.span_num):
@@ -138,10 +154,9 @@ class SpanPredict(nn.Module):
             r = r / (torch.sum(r) + eps)
             all_r.append(r)
         
-        # TODO: check
         all_r = torch.stack(all_r).permute(1, 2, 0) # batch_size, seq_len, span_num
 
-        # TODO: Jensen-Shannon divergence loss
+        # NOTE: Jensen-Shannon divergence loss
         pi_r = self.mixing_coeff_softmax(self.mixing_coefficients) * all_r  # batch_size, seq_len, span_num
         overlap_p = torch.sum(pi_r, dim=2)  # batch_size, seq_len
         log_overlap_p = torch.log(overlap_p + 1e-40)    # batch_size, seq_len
@@ -149,7 +164,7 @@ class SpanPredict(nn.Module):
         log_all_r = torch.log(all_r + 1e-40)    # batch_size, seq_len, span_num
         conciseness_p_entropy = torch.sum(-all_r*log_all_r, dim=1)    # batch_size, span_num
         conciseness_p_entropy = torch.sum(torch.squeeze(self.mixing_coeff_softmax(self.mixing_coefficients), dim=1)*conciseness_p_entropy, dim=1)   # batch_size
-        jsd_loss = overlap_p_entropy - conciseness_p_entropy
+        jsd_loss = 2 * (self.jsd_theta * overlap_p_entropy - (1-self.jsd_theta) * conciseness_p_entropy)
 
         all_r = torch.unsqueeze(all_r, dim=3)   # batch_size, seq_len, span_num, 1
         final_image_features = torch.unsqueeze(final_image_features, dim=2)   # batch_size, seq_len, 1, image_feature_size
@@ -160,7 +175,7 @@ class SpanPredict(nn.Module):
         z = torch.matmul(averaged_m, self.weights_z)    # batch_size, span_num
         # print(m, z, self.weights_z, averaged_m)
         out = torch.unsqueeze(torch.sum(z, dim=1), dim=1)    # batch_size, 1
-        print(out, jsd_loss)
+        # print(out, jsd_loss)
 
         return out, torch.squeeze(all_r, 3).permute(0, 2, 1), jsd_loss
 

@@ -5,11 +5,12 @@ from torchvision import transforms
 from natsort import natsorted
 import numpy as np
 import json
+from transformers import BertTokenizer
 
 
 class Data(Dataset):
-    def __init__(self, frame_path, mask_path, label_path, frame_interval, first_n_frame_dynamics):
-        self.data = {'scene_id': [], 'color': [], 'labels': []}
+    def __init__(self, frame_path, mask_path, label_path, frame_interval, first_n_frame_dynamics, task_type, combined_scene_tasks=None):
+        self.data = {'scene_id': [], 'color': [], 'labels': [], 'shape': []}
         with open(label_path, 'r') as f:
             label_data = json.load(f)
             f.close()
@@ -23,16 +24,20 @@ class Data(Dataset):
                 label = int(scene_data_i[2][0])
                 self.data['color'].append(scene_data_i[1])
                 self.data['labels'].append(label)
+                self.data['shape'].append(scene_data_i[0].split('.')[0])
 
         self.frame_path = frame_path
         self.mask_path = mask_path
         self.transform = transforms.Compose([
             transforms.ToPILImage(),
             transforms.Resize((128, 128)),
-            transforms.ToTensor(),
+            transforms.ToTensor()
         ])
         self.frame_interval = frame_interval
         self.first_n_frame_dynamics = first_n_frame_dynamics
+        self.task_type = task_type
+        self.combined_scene_tasks = combined_scene_tasks
+        self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
 
 
     def __len__(self):
@@ -42,6 +47,7 @@ class Data(Dataset):
     def __getitem__(self, idx):
         scene_id = self.data['scene_id'][idx]
         color = self.data['color'][idx]
+        shape = self.data['shape'][idx]
 
         image_folder = os.path.join(self.frame_path, scene_id)
         image_paths = os.listdir(image_folder)
@@ -63,4 +69,24 @@ class Data(Dataset):
         assert len(final_mask_paths) > 0
         masks = [self.transform(io.imread(i + '/{}.jpg'.format(color))) for i in final_mask_paths]
 
-        return images, masks, self.data['labels'][idx]
+        if self.task_type == 'combined':
+            for k,v in self.combined_scene_tasks.items():
+                if int(scene_id) >= v[0] and int(scene_id) <= v[1]:
+                    specific_task = k
+                    break
+            if specific_task == 'contact':
+                query = "Does the {} {} get contacted by the red ball?".format(color, shape)
+            elif specific_task == 'contain':
+                query = "Is the {} {} contained within the containment holders?".format(color, shape)
+            elif specific_task == 'stability':
+                query = "Is the {} {} stable after it falls?".format(color, shape)
+        else:
+            if self.task_type == 'contact':
+                query = "Does the {} {} get contacted by the red ball?".format(color, shape)
+            elif self.task_type == 'contain':
+                query = "Is the {} {} contained within the containment holders?".format(color, shape)
+            elif self.task_type == 'stability':
+                query = "Is the {} {} stable after it falls?".format(color, shape)
+        encoded_query = self.tokenizer(query, padding='max_length', max_length=15, return_tensors='pt')
+
+        return images, masks, self.data['labels'][idx], encoded_query
