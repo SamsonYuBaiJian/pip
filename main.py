@@ -229,17 +229,17 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
         if stats['val']['cls_loss'][-1] < min_val_classification_loss:
             min_val_classification_loss = stats['val']['cls_loss'][-1]
             min_val_classification_epoch = i
-            torch.save(model, os.path.join(experiment_save_path, 'cls_model'))
+            torch.save(model, os.path.join(experiment_save_path, 'model'))
         if stats['val']['gen_loss'][-1] > max_val_image_loss:
             max_val_image_loss = stats['val']['gen_loss'][-1]
             max_val_image_epoch = i
-            torch.save(model, os.path.join(experiment_save_path, 'model'))
+            # torch.save(model, os.path.join(experiment_save_path, 'model'))
 
         with open(os.path.join(experiment_save_path, 'log.txt'), 'w') as f:
             f.write('{}\n'.format(cfg))
             f.write('{}\n'.format(stats))
-            # f.write('Min cls loss: epoch {}, {}\n'.format(min_val_classification_epoch, min_val_classification_loss))
-            f.write('Min val gen loss: epoch {}, {}\n'.format(min_val_image_epoch, max_val_image_epoch))
+            f.write('Min cls loss: epoch {}, {}\n'.format(min_val_classification_epoch, min_val_classification_loss))
+            f.write('Min val gen loss: epoch {}, {}\n'.format(max_val_image_epoch, max_val_image_loss))
             f.close()
 
 
