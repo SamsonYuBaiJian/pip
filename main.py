@@ -132,6 +132,9 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
                         if frame_score.item() > span_threshold:
                             span_indices.append(l+first_n_frame_dynamics)
                     f.write('Span {}: '.format(k) + str(span_indices) + '\n')
+                f.write('\n')
+                for k, span in enumerate(all_r[0]):
+                    f.write('Span {}: '.format(k) + str(span) + '\n')
                 f.close()
 
             if save_frames_every is not None and j % save_frames_every == 0:
@@ -211,6 +214,9 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
                             if frame_score.item() > span_threshold:
                                 span_indices.append(l+first_n_frame_dynamics)
                         f.write('Span {}: '.format(k) + str(span_indices) + '\n')
+                    f.write('\n')
+                    for k, span in enumerate(all_r[0]):
+                        f.write('Span {}: '.format(k) + str(span) + '\n')
                     f.close()
 
                 temp_val_image_loss[-1] /= seq_len
