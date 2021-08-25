@@ -9,8 +9,9 @@ data_path: "/home/samson/see-aaai/data/contain/data"
 train_val_test_splits: [0.6, 0.2, 0.2]
 save_path: "experiments"
 save_frames_every: 1
-load_model_path: ""
-experiment_type: "train"
+load_model_path: null
+experiment_type: "test"
+device: "cuda:3"
 
 # hyperparameters
 num_epoch: 30
@@ -19,7 +20,7 @@ teacher_forcing_prob: 0.1
 first_n_frame_dynamics: 3
 frame_interval: 2
 learning_rate: 0.001
-max_seq_len: 25
+max_seq_len: 40
 span_num: 3
 span_threshold: 1.e-10
 jsd_theta: 0.5
