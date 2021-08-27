@@ -9,9 +9,10 @@ data_path: "/home/samson/see-aaai/data/contain/data"
 train_val_test_splits: [0.6, 0.2, 0.2]
 save_path: "experiments"
 save_frames_every: 1
-load_model_path: null
+load_model_path: "experiments/2021-08-28 01-34-35 contain train pip_2/model_pip_2"
 experiment_type: "test"
 device: "cuda:3"
+model_type: "pip_2"
 
 # hyperparameters
 num_epoch: 30

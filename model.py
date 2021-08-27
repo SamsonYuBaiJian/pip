@@ -7,7 +7,7 @@ from torchvision import transforms
 
 
 class Model(nn.Module):
-    def __init__(self, device, span_num=1, jsd_theta=0.5, nc=3, nf=16):
+    def __init__(self, device, span_num=1, jsd_theta=0.5, model_type='pip_1', nc=3, nf=16):
         super(Model, self).__init__()
         # generation
         self.c1 = dcgan_conv(nc, nf, stride=1)  # input is (3) x 128 x 128
@@ -26,9 +26,13 @@ class Model(nn.Module):
         self.upc5 = dcgan_upconv(2*nf*2, nf, stride=1)
         self.upc6 = nn.ConvTranspose2d(in_channels=nf*2,out_channels=nc,kernel_size=(3,3),stride=1,padding=1,output_padding=0)
 
+        if model_type == 'pip_1':
         # span selector
-        self.span_predict = SpanPredict(span_num, jsd_theta, device)
+            self.span_predict = SpanPredict(span_num, jsd_theta, device)
+        elif model_type == 'pip_2':
+            self.frame_predict = FramePredict(device)
         self.device = device
+        self.model_type = model_type
 
     def forward(self, task, images, masks, queries, teacher_forcing_batch, first_n_frame_dynamics, max_seq_len):
         sequence_len = len(images)
@@ -79,9 +83,15 @@ class Model(nn.Module):
                 decoded_frame = self.upc6(torch.cat([out_5, inp_1], dim=1))
                 decoded_images.append(decoded_frame)
 
-        images_first_n_frames = torch.stack(images_first_n_frames).permute(1, 2, 0, 3, 4).to(self.device)   # batch_size, channels, seq_len, height, width
-        masks_first_n_frames = torch.stack(masks).permute(1, 2, 0, 3, 4).to(self.device)    # batch_size, 1, seq_len, height, width
-        classification, all_r, jsd_loss = self.span_predict(decoded_images, images_first_n_frames, masks_first_n_frames.repeat((1, 3, 1, 1, 1)), queries)
+        if self.model_type == 'pip_1':
+            images_first_n_frames = torch.stack(images_first_n_frames).permute(1, 2, 0, 3, 4).to(self.device)   # batch_size, channels, seq_len, height, width
+            masks_first_n_frames = torch.stack(masks).permute(1, 2, 0, 3, 4).to(self.device)    # batch_size, 1, seq_len, height, width
+            classification, all_r, jsd_loss = self.span_predict(decoded_images, images_first_n_frames, masks_first_n_frames.repeat((1, 3, 1, 1, 1)), queries)
+        elif self.model_type == 'pip_2':
+            images_first_n_frames = torch.stack(images_first_n_frames).permute(1, 2, 0, 3, 4).to(self.device)   # batch_size, channels, seq_len, height, width
+            masks_first_n_frames = torch.stack(masks).permute(1, 2, 0, 3, 4).to(self.device)    # batch_size, 1, seq_len, height, width
+            all_r, jsd_loss = None, None
+            classification = self.frame_predict(decoded_images, images_first_n_frames, masks_first_n_frames.repeat((1, 3, 1, 1, 1)), queries)
 
         return classification, decoded_images, all_r, jsd_loss
 
@@ -99,7 +109,7 @@ class SpanPredict(nn.Module):
         resnet50 = models.resnet50(pretrained=True)
         removed = list(resnet50.children())[:-1]
         self.frame_encoder = torch.nn.Sequential(*removed)
-        # pretrain = torch.load('r3d50_K_200ep.pth', map_location='cpu')
+        # pretrain = torch.load('r3d34_K_200ep.pth', map_location='cpu')
         self.first_n_frames_encoder = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
         # self.first_n_frames_encoder.load_state_dict(pretrain['state_dict'])
         self.first_n_masks_encoder = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
@@ -178,6 +188,42 @@ class SpanPredict(nn.Module):
         # print(out, jsd_loss)
 
         return out, torch.squeeze(all_r, 3).permute(0, 2, 1), jsd_loss
+
+
+class FramePredict(nn.Module):
+    def __init__(self, device):
+        super(FramePredict, self).__init__()
+        # encoders
+        # pretrain = torch.load('r3d34_K_200ep.pth', map_location='cpu')
+        self.first_n_frames_encoder = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
+        # self.first_n_frames_encoder.load_state_dict(pretrain['state_dict'])
+        self.first_n_masks_encoder = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
+        # self.first_n_masks_encoder.load_state_dict(pretrain['state_dict'])
+        self.global_context = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
+        # self.global_context.load_state_dict(pretrain['state_dict'])
+        self.bert = BertModel.from_pretrained('bert-base-uncased')
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(0.5)
+        self.linear = nn.Linear(2304, 256)
+        self.fc = nn.Linear(256, 1)
+        
+        self.device = device
+
+    def forward(self, inp_decoded_images, images_first_n_frames, masks_first_n_frames, queries):
+        inp_decoded_images = torch.stack(inp_decoded_images)    # seq_len, batch_size, channels, width, height
+        # add first n frames and masks information
+        encoded_first_n_frames = self.first_n_frames_encoder(images_first_n_frames) # batch_size, 1, encoded_feature_size
+        encoded_first_n_masks = self.first_n_masks_encoder(masks_first_n_frames)    # batch_size, 1, encoded_feature_size
+        encoded_global_context = self.global_context(inp_decoded_images.permute(1, 2, 0, 3, 4)) # batch_size, 1, encoded_feature_size
+        # add task type information
+        input_ids = torch.squeeze(queries['input_ids'], dim=1).to(self.device)
+        attention_mask = torch.squeeze(queries['attention_mask'], dim=1).to(self.device)
+        token_type_ids = torch.squeeze(queries['token_type_ids'], dim=1).to(self.device)
+        task_conditioning = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids).last_hidden_state[:,0,:]
+        final_image_features = torch.cat([encoded_first_n_frames, encoded_first_n_masks, encoded_global_context, task_conditioning], dim=1)
+        classification = self.fc(self.relu(self.dropout(self.linear(self.relu(self.dropout(final_image_features))))))
+
+        return classification
 
 
 class ConvLSTMCell(nn.Module):
@@ -445,24 +491,3 @@ def load_pretrained_model(model, pretrain_path):
     model.fc = nn.Linear(model.fc.in_features, n_finetune_classes)
 
     return model
-
-
-# def get_fine_tuning_parameters(model, ft_begin_index):
-#     if ft_begin_index == 0:
-#         return model.parameters()
-
-#     ft_module_names = []
-#     for i in range(ft_begin_index, 5):
-#         ft_module_names.append('layer{}'.format(ft_begin_index))
-#     ft_module_names.append('fc')
-
-#     parameters = []
-#     for k, v in model.named_parameters():
-#         for ft_module in ft_module_names:
-#             if ft_module in k:
-#                 parameters.append({'params': v})
-#                 break
-#         else:
-#             parameters.append({'params': v, 'lr': 0.0})
-
-#     return parameters

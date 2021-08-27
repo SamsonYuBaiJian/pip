@@ -27,9 +27,9 @@ def get_classification_accuracy(pred_labels, labels):
     return acc, num_correct
 
 
-def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path, test_label_path, save_path, load_model_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, learning_rate, save_frames_every, max_seq_len, span_num, span_threshold, jsd_theta, device):
+def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path, test_label_path, save_path, load_model_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, learning_rate, save_frames_every, max_seq_len, span_num, span_threshold, jsd_theta, device, model_type):
     # get experiment ID
-    experiment_id = datetime.datetime.now().strftime('%Y-%m-%d %H-%M-%S') +  ' ' + task_type + ' train'
+    experiment_id = datetime.datetime.now().strftime('%Y-%m-%d %H-%M-%S') +  ' ' + task_type + ' train' + ' ' + model_type
     if not os.path.exists(save_path):
         os.makedirs(save_path, exist_ok=True)
     experiment_save_path = os.path.join(save_path, experiment_id)
@@ -58,9 +58,12 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
         model.ConvLSTMCell1.device = device
         model.ConvLSTMCell2.device = device
         model.ConvLSTMCell3.device = device
-        model.span_predict.device = device
+        if model_type == 'pip_1':
+            model.span_predict.device = device
+        elif model_type == 'pip_2':
+            model.frame_predict.device = device
     else:
-        model = Model(device, span_num, jsd_theta, nc=3, nf=16).to(device)
+        model = Model(device, span_num, jsd_theta, model_type, nc=3, nf=16).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     bce_logits_loss = nn.BCEWithLogitsLoss().to(device)
     bce_loss = nn.BCELoss().to(device)
@@ -78,7 +81,8 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
         print('Training for epoch {}/{}...'.format(i+1, num_epoch))
         temp_train_classification_loss = []
         temp_train_image_loss = []
-        temp_train_jsd_loss = []
+        if model_type == 'pip_1':
+            temp_train_jsd_loss = []
         total_num_correct = 0
         total_cnt = 0
         model.train()
@@ -92,11 +96,15 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
             train_acc, num_correct = get_classification_accuracy(pred_labels, labels)
             total_num_correct += num_correct
             cls_loss = bce_logits_loss(pred_labels, labels)
-            loss = cls_loss + torch.mean(jsd_loss)
+            if model_type == 'pip_1':
+                loss = cls_loss + torch.mean(jsd_loss)
+            elif model_type == 'pip_2':
+                loss = cls_loss
 
             temp_train_classification_loss.append(cls_loss.data.item() * retrieved_batch_size)
             temp_train_image_loss.append(0)
-            temp_train_jsd_loss.append(torch.mean(jsd_loss).data.item() * retrieved_batch_size)
+            if model_type == 'pip_1':
+                temp_train_jsd_loss.append(torch.mean(jsd_loss).data.item() * retrieved_batch_size)
 
             # save generated images for testing
             if save_frames_every is not None and j % save_frames_every == 0:
@@ -124,18 +132,19 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
                 temp_train_image_loss[-1] += img_loss.data.item() * retrieved_batch_size
                 seq_len = len(pred_images_seq[:-1])
             
-            # save selected spans
-            with open(os.path.join(epoch_train_save_img_dir, 'spans.txt'), 'w') as f:
-                for k, span in enumerate(all_r[0]):
-                    span_indices = []
-                    for l, frame_score in enumerate(span):
-                        if frame_score.item() > span_threshold:
-                            span_indices.append(l+first_n_frame_dynamics)
-                    f.write('Span {}: '.format(k) + str(span_indices) + '\n')
-                f.write('\n')
-                for k, span in enumerate(all_r[0]):
-                    f.write('Span {}: '.format(k) + str(span) + '\n')
-                f.close()
+            if model_type == 'pip_1':
+                # save selected spans
+                with open(os.path.join(epoch_train_save_img_dir, 'spans.txt'), 'w') as f:
+                    for k, span in enumerate(all_r[0]):
+                        span_indices = []
+                        for l, frame_score in enumerate(span):
+                            if frame_score.item() > span_threshold:
+                                span_indices.append(l+first_n_frame_dynamics)
+                        f.write('Span {}: '.format(k) + str(span_indices) + '\n')
+                    f.write('\n')
+                    for k, span in enumerate(all_r[0]):
+                        f.write('Span {}: '.format(k) + str(span) + '\n')
+                    f.close()
 
             if save_frames_every is not None and j % save_frames_every == 0:
                 if teacher_forcing_batch[0]:
@@ -150,9 +159,17 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
             loss.backward()
             optimizer.step()
 
-            print("Epoch {}/{} batch {}/{} training done with cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.".format(i+1, num_epoch, j+1, len(train_dataloader), temp_train_classification_loss[-1] / retrieved_batch_size, train_acc, temp_train_image_loss[-1] / retrieved_batch_size, temp_train_jsd_loss[-1] / retrieved_batch_size))
+            if model_type == 'pip_1':
+                print("Epoch {}/{} batch {}/{} training done with cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.".format(i+1, num_epoch, j+1, len(train_dataloader), temp_train_classification_loss[-1] / retrieved_batch_size, train_acc, temp_train_image_loss[-1] / retrieved_batch_size, temp_train_jsd_loss[-1] / retrieved_batch_size))
+            elif model_type == 'pip_2':
+                print("Epoch {}/{} batch {}/{} training done with cls loss={}, cls accuracy={}, gen loss={}.".format(i+1, num_epoch, j+1, len(train_dataloader), temp_train_classification_loss[-1] / retrieved_batch_size, train_acc, temp_train_image_loss[-1] / retrieved_batch_size))
 
-        print("Epoch {}/{} OVERALL train cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.\n".format(i+1, num_epoch, sum(temp_train_classification_loss) / total_cnt, total_num_correct / total_cnt, sum(temp_train_image_loss) / total_cnt, sum(temp_train_jsd_loss) / total_cnt))
+            break
+
+        if model_type == 'pip_1':
+            print("Epoch {}/{} OVERALL train cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.\n".format(i+1, num_epoch, sum(temp_train_classification_loss) / total_cnt, total_num_correct / total_cnt, sum(temp_train_image_loss) / total_cnt, sum(temp_train_jsd_loss) / total_cnt))
+        elif model_type == 'pip_2':
+            print("Epoch {}/{} OVERALL train cls loss={}, cls accuracy={}, gen loss={}.\n".format(i+1, num_epoch, sum(temp_train_classification_loss) / total_cnt, total_num_correct / total_cnt, sum(temp_train_image_loss) / total_cnt))
         stats['train']['cls_loss'].append(sum(temp_train_classification_loss) / total_cnt)
         stats['train']['cls_acc'].append(total_num_correct / total_cnt)
         stats['train']['gen_loss'].append(sum(temp_train_image_loss) / total_cnt)
@@ -162,7 +179,8 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
         print('Validation for epoch {}/{}...'.format(i+1, num_epoch))
         temp_val_classification_loss = []
         temp_val_image_loss = []
-        temp_val_jsd_loss = []
+        if model_type == 'pip_1':
+            temp_val_jsd_loss = []
         total_num_correct = 0
         total_cnt = 0
         model.eval()
@@ -180,7 +198,8 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
                 bce_loss = bce_logits_loss(pred_labels, labels)
                 temp_val_classification_loss.append(bce_loss.data.item() * retrieved_batch_size)
                 temp_val_image_loss.append(0)
-                temp_val_jsd_loss.append(torch.mean(jsd_loss).data.item() * retrieved_batch_size)
+                if model_type == 'pip_1':
+                    temp_val_jsd_loss.append(torch.mean(jsd_loss).data.item() * retrieved_batch_size)
 
                 # save generated images for testing
                 if save_frames_every is not None and i % save_frames_every == 0:
@@ -207,26 +226,35 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
                     temp_val_image_loss[-1] += img_loss.data.item() * retrieved_batch_size
                     seq_len = len(pred_images_seq[:-1])
 
-                # save selected spans
-                with open(os.path.join(epoch_val_save_img_dir, 'spans.txt'), 'w') as f:
-                    for k, span in enumerate(all_r[0]):
-                        span_indices = []
-                        for l, frame_score in enumerate(span):
-                            if frame_score.item() > span_threshold:
-                                span_indices.append(l+first_n_frame_dynamics)
-                        f.write('Span {}: '.format(k) + str(span_indices) + '\n')
-                    f.write('\n')
-                    for k, span in enumerate(all_r[0]):
-                        f.write('Span {}: '.format(k) + str(span) + '\n')
-                    f.close()
+                if model_type == 'pip_1':
+                    # save selected spans
+                    with open(os.path.join(epoch_val_save_img_dir, 'spans.txt'), 'w') as f:
+                        for k, span in enumerate(all_r[0]):
+                            span_indices = []
+                            for l, frame_score in enumerate(span):
+                                if frame_score.item() > span_threshold:
+                                    span_indices.append(l+first_n_frame_dynamics)
+                            f.write('Span {}: '.format(k) + str(span_indices) + '\n')
+                        f.write('\n')
+                        for k, span in enumerate(all_r[0]):
+                            f.write('Span {}: '.format(k) + str(span) + '\n')
+                        f.close()
 
                 temp_val_image_loss[-1] /= seq_len
 
                 print("Saved new validation sequences.")
                 
-                print("Epoch {}/{} batch {}/{} validation done with cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.".format(i+1, num_epoch, j+1, len(val_dataloader), temp_val_classification_loss[-1] / retrieved_batch_size, val_acc, temp_val_image_loss[-1] / retrieved_batch_size, temp_val_jsd_loss[-1] / retrieved_batch_size))
+                if model_type == 'pip_1':
+                    print("Epoch {}/{} batch {}/{} validation done with cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.".format(i+1, num_epoch, j+1, len(val_dataloader), temp_val_classification_loss[-1] / retrieved_batch_size, val_acc, temp_val_image_loss[-1] / retrieved_batch_size, temp_val_jsd_loss[-1] / retrieved_batch_size))
+                elif model_type == 'pip_2':
+                    print("Epoch {}/{} batch {}/{} validation done with cls loss={}, cls accuracy={}, gen loss={}.".format(i+1, num_epoch, j+1, len(val_dataloader), temp_val_classification_loss[-1] / retrieved_batch_size, val_acc, temp_val_image_loss[-1] / retrieved_batch_size))
 
-        print("Epoch {}/{} OVERALL validation cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.\n".format(i+1, num_epoch, sum(temp_val_classification_loss) / total_cnt, total_num_correct / total_cnt, sum(temp_val_image_loss) / total_cnt, sum(temp_val_jsd_loss) / total_cnt))
+                break
+
+        if model_type == 'pip_1':
+            print("Epoch {}/{} OVERALL validation cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.\n".format(i+1, num_epoch, sum(temp_val_classification_loss) / total_cnt, total_num_correct / total_cnt, sum(temp_val_image_loss) / total_cnt, sum(temp_val_jsd_loss) / total_cnt))
+        elif model_type == 'pip_2':
+            print("Epoch {}/{} OVERALL validation cls loss={}, cls accuracy={}, gen loss={}.\n".format(i+1, num_epoch, sum(temp_val_classification_loss) / total_cnt, total_num_correct / total_cnt, sum(temp_val_image_loss) / total_cnt))
         stats['val']['cls_loss'].append(sum(temp_val_classification_loss) / total_cnt)
         stats['val']['cls_acc'].append(total_num_correct / total_cnt)
         stats['val']['gen_loss'].append(sum(temp_val_image_loss) / total_cnt)
@@ -235,7 +263,7 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
         if stats['val']['cls_loss'][-1] < min_val_classification_loss:
             min_val_classification_loss = stats['val']['cls_loss'][-1]
             min_val_classification_epoch = i
-            torch.save(model, os.path.join(experiment_save_path, 'model'))
+            torch.save(model, os.path.join(experiment_save_path, 'model_{}'.format(model_type)))
         if stats['val']['gen_loss'][-1] > max_val_image_loss:
             max_val_image_loss = stats['val']['gen_loss'][-1]
             max_val_image_epoch = i
@@ -249,9 +277,9 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
 
 
 
-def test(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path, test_label_path, save_path, load_model_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, learning_rate, save_frames_every, max_seq_len, span_num, span_threshold, jsd_theta, device):
+def test(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path, test_label_path, save_path, load_model_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, learning_rate, save_frames_every, max_seq_len, span_num, span_threshold, jsd_theta, device, model_type):
     # get experiment ID
-    experiment_id = datetime.datetime.now().strftime('%Y-%m-%d %H-%M-%S') +  ' ' + task_type + ' test'
+    experiment_id = datetime.datetime.now().strftime('%Y-%m-%d %H-%M-%S') +  ' ' + task_type + ' test' + ' ' + model_type
     if not os.path.exists(save_path):
         os.makedirs(save_path, exist_ok=True)
     experiment_save_path = os.path.join(save_path, experiment_id)
@@ -267,18 +295,19 @@ def test(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path
     # NOTE
     save_img_dir = os.path.join(experiment_save_path, 'generations')
 
-    print(device)
     device = torch.device(device if torch.cuda.is_available() else 'cpu')
-    print(device)
     if load_model_path is not None:
         model = torch.load(load_model_path, map_location=device).to(device)
         model.device = device
         model.ConvLSTMCell1.device = device
         model.ConvLSTMCell2.device = device
         model.ConvLSTMCell3.device = device
-        model.span_predict.device = device
+        if model_type == 'pip_1':
+            model.span_predict.device = device
+        elif model_type == 'pip_2':
+            model.frame_predict.device = device
     else:
-        model = Model(device, span_num, jsd_theta, nc=3, nf=16).to(device)
+        model = Model(device, span_num, jsd_theta, model_type, nc=3, nf=16).to(device)
     bce_logits_loss = nn.BCEWithLogitsLoss().to(device)
     bce_loss = nn.BCELoss().to(device)
     frame_loss = PSNR().to(device)
@@ -289,7 +318,8 @@ def test(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path
     model.eval()
     temp_test_classification_loss = []
     temp_test_image_loss = []
-    temp_test_jsd_loss = []
+    if model_type == 'pip_1':
+        temp_test_jsd_loss = []
     total_num_correct = 0
     total_cnt = 0
 
@@ -307,7 +337,8 @@ def test(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path
 
             temp_test_classification_loss.append(cls_loss.data.item() * retrieved_batch_size)
             temp_test_image_loss.append(0)
-            temp_test_jsd_loss.append(torch.mean(jsd_loss).data.item() * retrieved_batch_size)
+            if model_type == 'pip_1':
+                temp_test_jsd_loss.append(torch.mean(jsd_loss).data.item() * retrieved_batch_size)
 
             # save generated images for testing
             if save_frames_every is not None and j % save_frames_every == 0:
@@ -334,18 +365,19 @@ def test(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path
                 temp_test_image_loss[-1] += img_loss.data.item() * retrieved_batch_size
                 seq_len = len(pred_images_seq[:-1])
             
-            # save selected spans
-            with open(os.path.join(experiment_save_path, 'spans.txt'), 'w') as f:
-                for k, span in enumerate(all_r[0]):
-                    span_indices = []
-                    for l, frame_score in enumerate(span):
-                        if frame_score.item() > span_threshold:
-                            span_indices.append(l+first_n_frame_dynamics)
-                    f.write('Span {}: '.format(k) + str(span_indices) + '\n')
-                f.write('\n')
-                for k, span in enumerate(all_r[0]):
-                    f.write('Span {}: '.format(k) + str(span) + '\n')
-                f.close()
+            if model_type == 'pip_1':
+                # save selected spans
+                with open(os.path.join(experiment_save_path, 'spans.txt'), 'w') as f:
+                    for k, span in enumerate(all_r[0]):
+                        span_indices = []
+                        for l, frame_score in enumerate(span):
+                            if frame_score.item() > span_threshold:
+                                span_indices.append(l+first_n_frame_dynamics)
+                        f.write('Span {}: '.format(k) + str(span_indices) + '\n')
+                    f.write('\n')
+                    for k, span in enumerate(all_r[0]):
+                        f.write('Span {}: '.format(k) + str(span) + '\n')
+                    f.close()
 
             if save_frames_every is not None and j % save_frames_every == 0:
                 if teacher_forcing_batch[0]:
@@ -355,9 +387,15 @@ def test(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path
 
             temp_test_image_loss[-1] /= seq_len
 
-            print("Batch {}/{} testing done with cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.".format(j+1, len(test_dataloader), temp_test_classification_loss[-1] / retrieved_batch_size, test_acc, temp_test_image_loss[-1] / retrieved_batch_size, temp_test_jsd_loss[-1] / retrieved_batch_size))
+            if model_type == 'pip_1':
+                print("Batch {}/{} testing done with cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.".format(j+1, len(test_dataloader), temp_test_classification_loss[-1] / retrieved_batch_size, test_acc, temp_test_image_loss[-1] / retrieved_batch_size, temp_test_jsd_loss[-1] / retrieved_batch_size))
+            elif model_type == 'pip_2':
+                print("Batch {}/{} testing done with cls loss={}, cls accuracy={}, gen loss={}.".format(j+1, len(test_dataloader), temp_test_classification_loss[-1] / retrieved_batch_size, test_acc, temp_test_image_loss[-1] / retrieved_batch_size))
 
-        print("OVERALL test cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.\n".format(sum(temp_test_classification_loss) / total_cnt, total_num_correct / total_cnt, sum(temp_test_image_loss) / total_cnt, sum(temp_test_jsd_loss) / total_cnt))
+        if model_type == 'pip_1':
+            print("OVERALL test cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.\n".format(sum(temp_test_classification_loss) / total_cnt, total_num_correct / total_cnt, sum(temp_test_image_loss) / total_cnt, sum(temp_test_jsd_loss) / total_cnt))
+        elif model_type == 'pip_2':
+            print("OVERALL test cls loss={}, cls accuracy={}, gen loss={}.\n".format(sum(temp_test_classification_loss) / total_cnt, total_num_correct / total_cnt, sum(temp_test_image_loss) / total_cnt))
         stats['test']['cls_loss'].append(sum(temp_test_classification_loss) / total_cnt)
         stats['test']['cls_acc'].append(total_num_correct / total_cnt)
         stats['test']['gen_loss'].append(sum(temp_test_image_loss) / total_cnt)
@@ -388,6 +426,7 @@ if __name__ == '__main__':
     load_model_path = cfg['load_model_path']
     experiment_type = cfg['experiment_type']
     device = cfg['device']
+    model_type = cfg['model_type']
     num_epoch = cfg['num_epoch']
     batch_size = cfg['batch_size']
     teacher_forcing_prob = cfg['teacher_forcing_prob']
@@ -404,6 +443,8 @@ if __name__ == '__main__':
         assert False, "Is your task_type contact, contain, stability or combined?"
     if experiment_type != 'train' and experiment_type != 'test':
         assert False, "Is your experiment_type train or test?"
+    if model_type != 'pip_1' and model_type != 'pip_2' and model_type != 'pip_3':
+        assert False, "Is your model_type pip_1, pip_2 or pip_3?"
     assert num_epoch > 0 and type(num_epoch) == int
     assert batch_size > 0 and type(batch_size) == int
     assert teacher_forcing_prob >= 0 and teacher_forcing_prob <= 1
@@ -414,7 +455,7 @@ if __name__ == '__main__':
 
 
     if experiment_type == 'train':
-        train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path, test_label_path, save_path, load_model_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, learning_rate, save_frames_every, max_seq_len, span_num, span_threshold, jsd_theta, device)
+        train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path, test_label_path, save_path, load_model_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, learning_rate, save_frames_every, max_seq_len, span_num, span_threshold, jsd_theta, device, model_type)
     
     elif experiment_type == 'test':
-        test(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path, test_label_path, save_path, load_model_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, learning_rate, save_frames_every, max_seq_len, span_num, span_threshold, jsd_theta, device)
+        test(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path, test_label_path, save_path, load_model_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, learning_rate, save_frames_every, max_seq_len, span_num, span_threshold, jsd_theta, device, model_type)
