@@ -1,27 +1,28 @@
-task_type: 'contain'
-frame_path: "/home/samson/see-aaai/data/contain/frames"
-mask_path: "/home/samson/see-aaai/data/contain/masks"
-train_label_path: "/home/samson/see-aaai/data/contain/train.json"
-val_label_path: "/home/samson/see-aaai/data/contain/val.json"
-test_label_path: "/home/samson/see-aaai/data/contain/test.json"
-video_path: "/home/samson/see-aaai/data/contain/videos"
-data_path: "/home/samson/see-aaai/data/contain/data"
+task_type: 'contact'
+frame_path: "/home/samson/see-aaai/data/contact/frames"
+mask_path: "/home/samson/see-aaai/data/contact/mask"
+train_label_path: "/home/samson/see-aaai/data/contact/json/train.json"
+val_label_path: "/home/samson/see-aaai/data/contact/json/val.json"
+test_label_path: "/home/samson/see-aaai/data/contact/json/test.json"
+video_path: "/home/samson/see-aaai/data/contact/videos"
+data_path: "/home/samson/see-aaai/data/contact/groundtruth"
 train_val_test_splits: [0.6, 0.2, 0.2]
 save_path: "experiments"
 save_frames_every: 1
-load_model_path: "experiments/2021-08-28 01-34-35 contain train pip_2/model_pip_2"
+load_model_path: null
 experiment_type: "test"
 device: "cuda:3"
 model_type: "pip_2"
 
 # hyperparameters
 num_epoch: 30
-batch_size: 8
+batch_size: 2
 teacher_forcing_prob: 0.1
 first_n_frame_dynamics: 3
 frame_interval: 2
 learning_rate: 0.001
 max_seq_len: 40
 span_num: 3
-span_threshold: 1.e-10
+span_threshold: 2.7.e-2
 jsd_theta: 0.5
+seed: 1

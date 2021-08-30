@@ -9,7 +9,7 @@ from transformers import BertTokenizer
 
 
 class Data(Dataset):
-    def __init__(self, frame_path, mask_path, label_path, frame_interval, first_n_frame_dynamics, task_type, combined_scene_tasks=None):
+    def __init__(self, frame_path, mask_path, label_path, frame_interval, first_n_frame_dynamics, task_type, model_type, max_seq_len, combined_scene_tasks=None):
         self.data = {'scene_id': [], 'color': [], 'labels': [], 'shape': []}
         with open(label_path, 'r') as f:
             label_data = json.load(f)
@@ -35,6 +35,8 @@ class Data(Dataset):
         ])
         self.frame_interval = frame_interval
         self.first_n_frame_dynamics = first_n_frame_dynamics
+        self.model_type = model_type
+        self.max_seq_len = max_seq_len
         self.task_type = task_type
         self.combined_scene_tasks = combined_scene_tasks
         self.tokenizer = BertTokenizer.from_pretrained('bert-base-uncased')
@@ -56,6 +58,10 @@ class Data(Dataset):
         # frame interval
         for i in range(0, len(image_paths), self.frame_interval):
             final_image_paths.append(os.path.join(image_folder, image_paths[i]))
+        if self.model_type == 'pip_3':
+            final_image_paths = final_image_paths[:self.first_n_frame_dynamics+1]
+        else:
+            final_image_paths = final_image_paths[:self.max_seq_len]
         assert len(final_image_paths) > 0
         images = [self.transform(io.imread(i)) for i in final_image_paths]
 
@@ -84,9 +90,9 @@ class Data(Dataset):
             if self.task_type == 'contact':
                 query = "Does the {} {} get contacted by the red ball?".format(color, shape)
             elif self.task_type == 'contain':
-                query = "Is the {} {} contained within the containment holders?".format(color, shape)
+                query = "Is the {} {} contained within the containment holder?".format(color, shape)
             elif self.task_type == 'stability':
                 query = "Is the {} {} stable after it falls?".format(color, shape)
-        encoded_query = self.tokenizer(query, padding='max_length', max_length=15, return_tensors='pt')
+        encoded_query = self.tokenizer(query, padding='max_length', max_length=20, return_tensors='pt')
 
         return images, masks, self.data['labels'][idx], encoded_query

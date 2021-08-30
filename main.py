@@ -37,15 +37,15 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
     
     if task_type == 'combined':
         train_combine_idx = {'contact': [1,200], 'contain': [201,400], 'stability': [401,600]}
-        train_dataset = Data(frame_path, mask_path, train_label_path, frame_interval, first_n_frame_dynamics, task_type, combined_scene_tasks=train_combine_idx)
+        train_dataset = Data(frame_path, mask_path, train_label_path, frame_interval, first_n_frame_dynamics, task_type, model_type, max_seq_len, combined_scene_tasks=train_combine_idx)
     else:
-        train_dataset = Data(frame_path, mask_path, train_label_path, frame_interval, first_n_frame_dynamics, task_type)
+        train_dataset = Data(frame_path, mask_path, train_label_path, frame_interval, first_n_frame_dynamics, task_type, model_type, max_seq_len,)
     train_dataloader = DataLoader(train_dataset, batch_size=batch_size, shuffle=True, num_workers=0)
     if task_type == 'combined':
         val_combine_idx = {'contact': [601,666], 'contain': [667,733], 'stability': [734,800]}
-        val_dataset = Data(frame_path, mask_path, val_label_path, frame_interval, first_n_frame_dynamics, task_type, combined_scene_tasks=val_combine_idx)
+        val_dataset = Data(frame_path, mask_path, val_label_path, frame_interval, first_n_frame_dynamics, task_type, model_type, max_seq_len, combined_scene_tasks=val_combine_idx)
     else:
-        val_dataset = Data(frame_path, mask_path, val_label_path, frame_interval, first_n_frame_dynamics, task_type)
+        val_dataset = Data(frame_path, mask_path, val_label_path, frame_interval, first_n_frame_dynamics, task_type, model_type, max_seq_len,)
     val_dataloader = DataLoader(val_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
 
     # NOTE
@@ -78,10 +78,10 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
     else:
         stats = {'train': {'cls_loss': [], 'cls_acc': []}, 'val': {'cls_loss': [], 'cls_acc': []}}
     
-    min_val_classification_loss = math.inf
+    max_val_classification_acc = 0
     if model_type == 'pip_1' or model_type == 'pip_2':
         max_val_image_loss = 0
-    min_val_classification_epoch = None
+    max_val_classification_epoch = None
     if model_type == 'pip_1' or model_type == 'pip_2':
         max_val_image_epoch = None
 
@@ -283,9 +283,9 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
             stats['val']['gen_loss'].append(sum(temp_val_image_loss) / total_cnt)
 
         # check for best stat/model using validation stats
-        if stats['val']['cls_loss'][-1] < min_val_classification_loss:
-            min_val_classification_loss = stats['val']['cls_loss'][-1]
-            min_val_classification_epoch = i
+        if stats['val']['cls_acc'][-1] > max_val_classification_acc:
+            max_val_classification_acc = stats['val']['cls_acc'][-1]
+            max_val_classification_epoch = i
             torch.save(model, os.path.join(experiment_save_path, 'model'))
         if model_type == 'pip_1' or model_type == 'pip_2':
             if stats['val']['gen_loss'][-1] > max_val_image_loss:
@@ -295,7 +295,7 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
         with open(os.path.join(experiment_save_path, 'log.txt'), 'w') as f:
             f.write('{}\n'.format(cfg))
             f.write('{}\n'.format(stats))
-            f.write('Min val classification loss: epoch {}, {}\n'.format(min_val_classification_epoch, min_val_classification_loss))
+            f.write('Max val classification acc: epoch {}, {}\n'.format(max_val_classification_epoch, max_val_classification_acc))
             if model_type == 'pip_1' or model_type == 'pip_2':
                 f.write('Max val generation loss: epoch {}, {}\n'.format(max_val_image_epoch, max_val_image_loss))
             f.close()
@@ -312,9 +312,9 @@ def test(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path
 
     if task_type == 'combined':
         test_combine_idx = {'contact': [801,866], 'contain': [867,933], 'stability': [934,1000]}
-        test_dataset = Data(frame_path, mask_path, test_label_path, frame_interval, first_n_frame_dynamics, task_type, combined_scene_tasks=test_combine_idx)
+        test_dataset = Data(frame_path, mask_path, test_label_path, frame_interval, first_n_frame_dynamics, task_type, model_type, max_seq_len, combined_scene_tasks=test_combine_idx)
     else:
-        test_dataset = Data(frame_path, mask_path, test_label_path, frame_interval, first_n_frame_dynamics, task_type)
+        test_dataset = Data(frame_path, mask_path, test_label_path, frame_interval, first_n_frame_dynamics, task_type, model_type, max_seq_len)
     test_dataloader = DataLoader(test_dataset, batch_size=batch_size, shuffle=False, num_workers=0)
 
     # NOTE
@@ -478,6 +478,7 @@ if __name__ == '__main__':
     span_num = cfg['span_num']
     span_threshold = cfg['span_threshold']
     jsd_theta = cfg['jsd_theta']
+    seed = cfg['seed']
 
     # check configs
     if task_type != 'contact' and task_type != 'contain' and task_type != 'stability' and task_type != 'combined':
@@ -494,6 +495,11 @@ if __name__ == '__main__':
     assert learning_rate > 0
     assert jsd_theta >= 0 and jsd_theta <= 0.5
 
+    # set seed values
+    os.environ['PYTHONHASHSEED'] = str(seed)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
 
     if experiment_type == 'train':
         train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path, test_label_path, save_path, load_model_path, num_epoch, batch_size, teacher_forcing_prob, first_n_frame_dynamics, frame_interval, learning_rate, save_frames_every, max_seq_len, span_num, span_threshold, jsd_theta, device, model_type)
