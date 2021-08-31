@@ -41,15 +41,15 @@ class Model(nn.Module):
         batch_size, channels, height, width = images[0].shape
         images_first_n_frames = []
         decoded_images = []
-        assert first_n_frame_dynamics < sequence_len
+        assert first_n_frame_dynamics <= sequence_len
 
         for i in range(sequence_len):
-            if i <= first_n_frame_dynamics:
+            if i < first_n_frame_dynamics:
                 # encode frames
                 images_i = images[i].to(self.device)
                 images_first_n_frames.append(images_i)
 
-            elif i > first_n_frame_dynamics:
+            elif i >= first_n_frame_dynamics:
                 if self.model_type == 'pip_3':
                     break
                 images_i = images[i].to(self.device)
@@ -80,7 +80,7 @@ class Model(nn.Module):
                 hx3, cx3 = self.ConvLSTMCell3(hx2, batch_size, (hx3, cx3))
 
             # decode
-            if i >= first_n_frame_dynamics and i <= max_seq_len:
+            if i >= first_n_frame_dynamics - 1 and i < max_seq_len:
                 # decode frames
                 out_1 = self.upc1(torch.cat([hx3, lstm_inp], dim=1))
                 out_2 = self.upc2(torch.cat([out_1, inp_5], dim=1))
@@ -121,13 +121,13 @@ class SpanPredict(nn.Module):
         resnet50 = models.resnet50(pretrained=True)
         removed = list(resnet50.children())[:-1]
         self.frame_encoder = torch.nn.Sequential(*removed)
-        # pretrain = torch.load('r3d34_K_200ep.pth', map_location='cpu')
+        pretrain = torch.load('r3d34_K_200ep.pth', map_location='cpu')
         self.first_n_frames_encoder = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
-        # self.first_n_frames_encoder.load_state_dict(pretrain['state_dict'])
+        self.first_n_frames_encoder.load_state_dict(pretrain['state_dict'])
         self.first_n_masks_encoder = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
-        # self.first_n_masks_encoder.load_state_dict(pretrain['state_dict'])
+        self.first_n_masks_encoder.load_state_dict(pretrain['state_dict'])
         self.global_context = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
-        # self.global_context.load_state_dict(pretrain['state_dict'])
+        self.global_context.load_state_dict(pretrain['state_dict'])
         self.bert = BertModel.from_pretrained('bert-base-uncased')
         
         self.span_weights_softmax = nn.Softmax(dim=1)
@@ -206,13 +206,13 @@ class FramePredict(nn.Module):
     def __init__(self, device):
         super(FramePredict, self).__init__()
         # encoders
-        # pretrain = torch.load('r3d34_K_200ep.pth', map_location='cpu')
+        pretrain = torch.load('r3d34_K_200ep.pth', map_location='cpu')
         self.first_n_frames_encoder = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
-        # self.first_n_frames_encoder.load_state_dict(pretrain['state_dict'])
+        self.first_n_frames_encoder.load_state_dict(pretrain['state_dict'])
         self.first_n_masks_encoder = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
-        # self.first_n_masks_encoder.load_state_dict(pretrain['state_dict'])
+        self.first_n_masks_encoder.load_state_dict(pretrain['state_dict'])
         self.global_context = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
-        # self.global_context.load_state_dict(pretrain['state_dict'])
+        self.global_context.load_state_dict(pretrain['state_dict'])
         self.bert = BertModel.from_pretrained('bert-base-uncased')
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(0.5)
@@ -242,11 +242,11 @@ class InitialPredict(nn.Module):
     def __init__(self, device):
         super(InitialPredict, self).__init__()
         # encoders
-        # pretrain = torch.load('r3d34_K_200ep.pth', map_location='cpu')
+        pretrain = torch.load('r3d34_K_200ep.pth', map_location='cpu')
         self.first_n_frames_encoder = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
-        # self.first_n_frames_encoder.load_state_dict(pretrain['state_dict'])
+        self.first_n_frames_encoder.load_state_dict(pretrain['state_dict'])
         self.first_n_masks_encoder = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
-        # self.first_n_masks_encoder.load_state_dict(pretrain['state_dict'])
+        self.first_n_masks_encoder.load_state_dict(pretrain['state_dict'])
         self.bert = BertModel.from_pretrained('bert-base-uncased')
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(0.5)
@@ -524,14 +524,3 @@ class ResNet(nn.Module):
         # x = self.fc(x)
 
         return x
-
-
-def load_pretrained_model(model, pretrain_path):
-    # if pretrain_path:
-    print('loading pretrained model {}'.format(pretrain_path))
-    pretrain = torch.load(pretrain_path, map_location='cpu')
-
-    model.load_state_dict(pretrain['state_dict'])
-    model.fc = nn.Linear(model.fc.in_features, n_finetune_classes)
-
-    return model

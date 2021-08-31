@@ -59,7 +59,7 @@ class Data(Dataset):
         for i in range(0, len(image_paths), self.frame_interval):
             final_image_paths.append(os.path.join(image_folder, image_paths[i]))
         if self.model_type == 'pip_3':
-            final_image_paths = final_image_paths[:self.first_n_frame_dynamics+1]
+            final_image_paths = final_image_paths[:self.first_n_frame_dynamics]
         else:
             final_image_paths = final_image_paths[:self.max_seq_len]
         assert len(final_image_paths) > 0
@@ -71,7 +71,7 @@ class Data(Dataset):
         final_mask_paths = []
         for i in range(0, len(mask_paths), self.frame_interval):
             final_mask_paths.append(os.path.join(mask_folder, mask_paths[i]))
-        final_mask_paths = final_mask_paths[:self.first_n_frame_dynamics+1]
+        final_mask_paths = final_mask_paths[:self.first_n_frame_dynamics]
         assert len(final_mask_paths) > 0
         masks = [self.transform(io.imread(i + '/{}.jpg'.format(color))) for i in final_mask_paths]
 

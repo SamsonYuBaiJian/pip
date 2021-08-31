@@ -69,7 +69,6 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
         model = Model(device, span_num, jsd_theta, model_type, nc=3, nf=16).to(device)
     optimizer = torch.optim.Adam(model.parameters(), lr=learning_rate)
     bce_logits_loss = nn.BCEWithLogitsLoss().to(device)
-    bce_loss = nn.BCELoss().to(device)
     if model_type == 'pip_1' or model_type == 'pip_2':
         frame_loss = PSNR().to(device)
 
@@ -145,18 +144,19 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
                     seq_len = len(pred_images_seq[:-1])
             
             if model_type == 'pip_1':
-                # save selected spans
-                with open(os.path.join(epoch_train_save_img_dir, 'spans.txt'), 'w') as f:
-                    for k, span in enumerate(all_r[0]):
-                        span_indices = []
-                        for l, frame_score in enumerate(span):
-                            if frame_score.item() > span_threshold:
-                                span_indices.append(l+first_n_frame_dynamics)
-                        f.write('Span {}: '.format(k) + str(span_indices) + '\n')
-                    f.write('\n')
-                    for k, span in enumerate(all_r[0]):
-                        f.write('Span {}: '.format(k) + str(span) + '\n')
-                    f.close()
+                if save_frames_every is not None and j % save_frames_every == 0:
+                    # save selected spans
+                    with open(os.path.join(epoch_train_save_img_dir, 'spans.txt'), 'w') as f:
+                        for k, span in enumerate(all_r[0]):
+                            span_indices = []
+                            for l, frame_score in enumerate(span):
+                                if frame_score.item() > span_threshold:
+                                    span_indices.append(l+first_n_frame_dynamics)
+                            f.write('Span {}: '.format(k) + str(span_indices) + '\n')
+                        f.write('\n')
+                        for k, span in enumerate(all_r[0]):
+                            f.write('Span {}: '.format(k) + str(span) + '\n')
+                        f.close()
 
             if save_frames_every is not None and j % save_frames_every == 0:
                 if teacher_forcing_batch[0]:
@@ -220,7 +220,7 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
                     temp_val_jsd_loss.append(torch.mean(jsd_loss).data.item() * retrieved_batch_size)
 
                 # save generated images for testing
-                if save_frames_every is not None and i % save_frames_every == 0:
+                if save_frames_every is not None and j % save_frames_every == 0:
                     epoch_val_save_img_dir = os.path.join(os.path.join(save_img_dir, str(i)), 'val')
                     pred_save_img_dir = os.path.join(epoch_val_save_img_dir, 'pred')
                     real_save_img_dir = os.path.join(epoch_val_save_img_dir, 'real')
@@ -235,7 +235,7 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
                 if model_type == 'pip_1' or model_type == 'pip_2':
                     for k, pred_images in enumerate(pred_images_seq[:-1]):
                         # save generated images for testing
-                        if save_frames_every is not None and i % save_frames_every == 0:
+                        if save_frames_every is not None and j % save_frames_every == 0:
                             save_image(pred_images[0], os.path.join(pred_save_img_dir, '{}.png'.format(k+first_n_frame_dynamics)))
                             save_image(frames[k+first_n_frame_dynamics][0], os.path.join(real_save_img_dir, '{}.png'.format(k+first_n_frame_dynamics)))
                         
@@ -246,23 +246,25 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
                         seq_len = len(pred_images_seq[:-1])
 
                 if model_type == 'pip_1':
-                    # save selected spans
-                    with open(os.path.join(epoch_val_save_img_dir, 'spans.txt'), 'w') as f:
-                        for k, span in enumerate(all_r[0]):
-                            span_indices = []
-                            for l, frame_score in enumerate(span):
-                                if frame_score.item() > span_threshold:
-                                    span_indices.append(l+first_n_frame_dynamics)
-                            f.write('Span {}: '.format(k) + str(span_indices) + '\n')
-                        f.write('\n')
-                        for k, span in enumerate(all_r[0]):
-                            f.write('Span {}: '.format(k) + str(span) + '\n')
-                        f.close()
+                    if save_frames_every is not None and j % save_frames_every == 0:
+                        # save selected spans
+                        with open(os.path.join(epoch_val_save_img_dir, 'spans.txt'), 'w') as f:
+                            for k, span in enumerate(all_r[0]):
+                                span_indices = []
+                                for l, frame_score in enumerate(span):
+                                    if frame_score.item() > span_threshold:
+                                        span_indices.append(l+first_n_frame_dynamics)
+                                f.write('Span {}: '.format(k) + str(span_indices) + '\n')
+                            f.write('\n')
+                            for k, span in enumerate(all_r[0]):
+                                f.write('Span {}: '.format(k) + str(span) + '\n')
+                            f.close()
 
                 if model_type == 'pip_1' or model_type == 'pip_2':
                     temp_val_image_loss[-1] /= seq_len
 
-                print("Saved new validation sequences.")
+                if save_frames_every is not None and j % save_frames_every == 0:
+                    print("Saved new validation sequences.")
                 
                 if model_type == 'pip_1':
                     print("Epoch {}/{} batch {}/{} validation done with cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.".format(i+1, num_epoch, j+1, len(val_dataloader), temp_val_classification_loss[-1] / retrieved_batch_size, val_acc, temp_val_image_loss[-1] / retrieved_batch_size, temp_val_jsd_loss[-1] / retrieved_batch_size))
@@ -337,7 +339,6 @@ def test(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path
     else:
         model = Model(device, span_num, jsd_theta, model_type, nc=3, nf=16).to(device)
     bce_logits_loss = nn.BCEWithLogitsLoss().to(device)
-    bce_loss = nn.BCELoss().to(device)
     if model_type == 'pip_1' or model_type == 'pip_2':
         frame_loss = PSNR().to(device)
 
@@ -401,24 +402,22 @@ def test(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path
                     seq_len = len(pred_images_seq[:-1])
             
             if model_type == 'pip_1':
-                # save selected spans
-                with open(os.path.join(experiment_save_path, 'spans.txt'), 'w') as f:
-                    for k, span in enumerate(all_r[0]):
-                        span_indices = []
-                        for l, frame_score in enumerate(span):
-                            if frame_score.item() > span_threshold:
-                                span_indices.append(l+first_n_frame_dynamics)
-                        f.write('Span {}: '.format(k) + str(span_indices) + '\n')
-                    f.write('\n')
-                    for k, span in enumerate(all_r[0]):
-                        f.write('Span {}: '.format(k) + str(span) + '\n')
-                    f.close()
+                if save_frames_every is not None and j % save_frames_every == 0:
+                    # save selected spans
+                    with open(os.path.join(experiment_save_path, 'spans.txt'), 'w') as f:
+                        for k, span in enumerate(all_r[0]):
+                            span_indices = []
+                            for l, frame_score in enumerate(span):
+                                if frame_score.item() > span_threshold:
+                                    span_indices.append(l+first_n_frame_dynamics)
+                            f.write('Span {}: '.format(k) + str(span_indices) + '\n')
+                        f.write('\n')
+                        for k, span in enumerate(all_r[0]):
+                            f.write('Span {}: '.format(k) + str(span) + '\n')
+                        f.close()
 
             if save_frames_every is not None and j % save_frames_every == 0:
-                if teacher_forcing_batch[0]:
-                    print("Saved new test sequences WITH teacher forcing.")
-                else:
-                    print("Saved new test sequences WITHOUT teacher forcing.")
+                print("Saved new test sequences.")
 
             if model_type == 'pip_1' or model_type == 'pip_2':
                 temp_test_image_loss[-1] /= seq_len
