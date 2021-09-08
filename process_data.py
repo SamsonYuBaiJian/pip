@@ -71,7 +71,7 @@ def save_data(data, start_idx, end_idx, label_path, task_type):
             # get classification label for each task
             if task_type == 'contact':
                 # if last x-coordinate or y-coordinate changes significantly
-                if abs(initial_coordinates[0] - final_coordinates[0]) >= 0.05 or abs(initial_coordinates[1] - final_coordinates[1]) >= 0.05:
+                if abs(initial_coordinates[0] - final_coordinates[0]) >= 0.2 or abs(initial_coordinates[1] - final_coordinates[1]) >= 0.2:
                     obj_label = [1]
                 else:
                     obj_label = [0]
@@ -95,11 +95,16 @@ def save_data(data, start_idx, end_idx, label_path, task_type):
                 unused_obj.append([obj_name, obj_label])
             
         if len(unused_obj) > 0:
-            if len(unused_obj) == 1 and len(obj_color_dict.keys()) == 1:
-                output_data[sample_num].append([unused_obj[0][0], obj_color_dict['Torus.020'], unused_obj[0][1]])
-                # print(output_data[sample_num][-1])
-            else:
-                print("WARNING:", unused_obj, obj_color_dict, color_data)
+            if task_type == 'contain':
+                if len(unused_obj) == 1 and len(obj_color_dict.keys()) == 1:
+                    output_data[sample_num].append([unused_obj[0][0], obj_color_dict['Torus.020'], unused_obj[0][1]])
+                else:
+                    print("WARNING:", unused_obj, obj_color_dict, color_data)
+            elif task_type == 'contact':
+                if len(unused_obj) == 1 and len(obj_color_dict.keys()) == 2:
+                    output_data[sample_num].append([unused_obj[0][0], obj_color_dict['Torus.24'], unused_obj[0][1]])
+                else:
+                    print("WARNING:", unused_obj, obj_color_dict, color_data)
 
     with open(label_path, 'w') as fp:
         json.dump(output_data, fp)
@@ -148,7 +153,7 @@ if __name__ == '__main__':
 
 
     # data = [os.path.join(data_path, i) for i in os.listdir(data_path)]
-    # save_folder = "/mnt/c/Users/samso/Documents/GitHub/SamsonYuBaiJian/SPECIAL/dataset/contact/fixed_data"
+    # save_folder = "/home/samson/SPECIAL/dataset/contact/fixed_data"
     # for i in range(len(data)):
     #     data_name = data[i].split('/')[-1].split('.')[0]
 
@@ -156,7 +161,7 @@ if __name__ == '__main__':
     #         sample_data = ast.literal_eval(f.readline())
     #         f.close()
 
-    #     num_obj = len(sample_data) - 1
+    #     num_obj = len(sample_data)
 
     #     objects = []
     #     all_data = []
@@ -176,11 +181,11 @@ if __name__ == '__main__':
         
     #     rest_data = all_data[cnt:]
 
-    #     # print(num_obj, len(objects), len(rest_data))
+    #     print(num_obj, len(objects), len(rest_data))
 
-    #     assert num_obj == len(objects) / 2
+    #     # assert num_obj == len(objects) / 2
 
-    #     assert(len(rest_data)) == (num_obj+1) * (150 * 13 + 1)
+    #     assert(len(rest_data)) == (num_obj) * (150 * 13 + 1)
 
     #     final_data = []
     #     final_data.append(objects)
@@ -194,10 +199,10 @@ if __name__ == '__main__':
     #         f.close()
 
 
-    # print("Processing data for {} task...".format(task_type))
-    # print("Getting data splits from {}...".format(data_path))
-    # get_dataset_splits(data_path, video_path, train_val_test_splits, task_type, train_label_path, val_label_path, test_label_path)
-    # print("Done.")
-    print("Getting frames from {} and saving to {}...".format(video_path, frame_path))
-    convert_avi_to_frame(video_path, frame_path)
+    print("Processing data for {} task...".format(task_type))
+    print("Getting data splits from {}...".format(data_path))
+    get_dataset_splits(data_path, video_path, train_val_test_splits, task_type, train_label_path, val_label_path, test_label_path)
     print("Done.")
+    # print("Getting frames from {} and saving to {}...".format(video_path, frame_path))
+    # convert_avi_to_frame(video_path, frame_path)
+    # print("Done.")

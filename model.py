@@ -7,7 +7,7 @@ from torchvision import transforms
 
 
 class Model(nn.Module):
-    def __init__(self, device, span_num=1, jsd_theta=0.5, model_type='pip_1', nc=3, nf=16):
+    def __init__(self, device, span_num=1, model_type='pip', nc=3, nf=16):
         super(Model, self).__init__()
         # generation
         self.c1 = dcgan_conv(nc, nf, stride=1)  # input is (3) x 128 x 128
@@ -26,13 +26,13 @@ class Model(nn.Module):
         self.upc5 = dcgan_upconv(2*nf*2, nf, stride=1)
         self.upc6 = nn.ConvTranspose2d(in_channels=nf*2,out_channels=nc,kernel_size=(3,3),stride=1,padding=1,output_padding=0)
 
-        if model_type == 'pip_1':
-        # span selector
-            self.span_predict = SpanPredict(span_num, jsd_theta, device)
-        elif model_type == 'pip_2':
-            self.frame_predict = FramePredict(device)
-        elif model_type == 'pip_3':
-            self.initial_predict = InitialPredict(device)
+        if model_type == 'pip':
+            # span selector
+            self.span_predict = SpanPredict(span_num, device)
+        elif model_type == 'ablation':
+            self.ablation = Ablation(device)
+        elif model_type == 'baseline':
+            self.baseline = Baseline(device)
         self.device = device
         self.model_type = model_type
 
@@ -50,7 +50,7 @@ class Model(nn.Module):
                 images_first_n_frames.append(images_i)
 
             elif i >= first_n_frame_dynamics:
-                if self.model_type == 'pip_3':
+                if self.model_type == 'ablation' or self.model_type == 'baseline':
                     break
                 images_i = images[i].to(self.device)
                 for j in range(batch_size):
@@ -58,7 +58,7 @@ class Model(nn.Module):
                     if not teacher_forcing_batch[j]:
                         images_i[j] = decoded_frame[j]
 
-            if self.model_type == 'pip_3':
+            if self.model_type == 'ablation' or self.model_type == 'baseline':
                 continue
 
             # encode
@@ -80,7 +80,7 @@ class Model(nn.Module):
                 hx3, cx3 = self.ConvLSTMCell3(hx2, batch_size, (hx3, cx3))
 
             # decode
-            if i >= first_n_frame_dynamics - 1 and i < max_seq_len:
+            if i >= first_n_frame_dynamics - 1 and i < max_seq_len - 1:
                 # decode frames
                 out_1 = self.upc1(torch.cat([hx3, lstm_inp], dim=1))
                 out_2 = self.upc2(torch.cat([out_1, inp_5], dim=1))
@@ -90,26 +90,26 @@ class Model(nn.Module):
                 decoded_frame = self.upc6(torch.cat([out_5, inp_1], dim=1))
                 decoded_images.append(decoded_frame)
 
-        if self.model_type == 'pip_1':
+        if self.model_type == 'pip':
             images_first_n_frames = torch.stack(images_first_n_frames).permute(1, 2, 0, 3, 4).to(self.device)   # batch_size, channels, seq_len, height, width
             masks_first_n_frames = torch.stack(masks).permute(1, 2, 0, 3, 4).to(self.device)    # batch_size, 1, seq_len, height, width
             classification, all_r, jsd_loss = self.span_predict(decoded_images, images_first_n_frames, masks_first_n_frames.repeat((1, 3, 1, 1, 1)), queries)
-        elif self.model_type == 'pip_2':
+        elif self.model_type == 'ablation':
             images_first_n_frames = torch.stack(images_first_n_frames).permute(1, 2, 0, 3, 4).to(self.device)   # batch_size, channels, seq_len, height, width
             masks_first_n_frames = torch.stack(masks).permute(1, 2, 0, 3, 4).to(self.device)    # batch_size, 1, seq_len, height, width
             all_r, jsd_loss = None, None
-            classification = self.frame_predict(decoded_images, images_first_n_frames, masks_first_n_frames.repeat((1, 3, 1, 1, 1)), queries)
-        elif self.model_type == 'pip_3':
+            classification = self.ablation(images_first_n_frames, masks_first_n_frames.repeat((1, 3, 1, 1, 1)), queries)
+        elif self.model_type == 'baseline':
             images_first_n_frames = torch.stack(images_first_n_frames).permute(1, 2, 0, 3, 4).to(self.device)   # batch_size, channels, seq_len, height, width
             masks_first_n_frames = torch.stack(masks).permute(1, 2, 0, 3, 4).to(self.device)    # batch_size, 1, seq_len, height, width
             all_r, jsd_loss = None, None
-            classification = self.initial_predict(images_first_n_frames, masks_first_n_frames.repeat((1, 3, 1, 1, 1)), queries)
+            classification = self.baseline(images_first_n_frames, masks_first_n_frames.repeat((1, 3, 1, 1, 1)), queries)
 
         return classification, decoded_images, all_r, jsd_loss
 
 
 class SpanPredict(nn.Module):
-    def __init__(self, span_num, jsd_theta, device):
+    def __init__(self, span_num, device):
         super(SpanPredict, self).__init__()
         # span weights
         self.weights_z = nn.Parameter(torch.randn((2048+512*3+768), requires_grad=True))
@@ -133,7 +133,6 @@ class SpanPredict(nn.Module):
         self.span_weights_softmax = nn.Softmax(dim=1)
         self.mixing_coeff_softmax = nn.Softmax(dim=2)
         self.span_num = span_num
-        self.jsd_theta = jsd_theta
         self.normalize = transforms.Compose([
             transforms.Normalize(mean=[0.485, 0.456, 0.406],
                          std=[0.229, 0.224, 0.225])
@@ -186,7 +185,7 @@ class SpanPredict(nn.Module):
         log_all_r = torch.log(all_r + 1e-40)    # batch_size, seq_len, span_num
         conciseness_p_entropy = torch.sum(-all_r*log_all_r, dim=1)    # batch_size, span_num
         conciseness_p_entropy = torch.sum(torch.squeeze(self.mixing_coeff_softmax(self.mixing_coefficients), dim=1)*conciseness_p_entropy, dim=1)   # batch_size
-        jsd_loss = 2 * (self.jsd_theta * overlap_p_entropy - (1-self.jsd_theta) * conciseness_p_entropy)
+        jsd_loss = overlap_p_entropy - conciseness_p_entropy
 
         all_r = torch.unsqueeze(all_r, dim=3)   # batch_size, seq_len, span_num, 1
         final_image_features = torch.unsqueeze(final_image_features, dim=2)   # batch_size, seq_len, 1, image_feature_size
@@ -195,52 +194,14 @@ class SpanPredict(nn.Module):
         m = m.permute(0, 2, 1, 3)   # batch_size, span_num, seq_len, image_feature_size
         averaged_m = torch.mean(m, dim=2)   # batch_size, span_num, image_feature_size
         z = torch.matmul(averaged_m, self.weights_z)    # batch_size, span_num
-        # print(m, z, self.weights_z, averaged_m)
         out = torch.unsqueeze(torch.sum(z, dim=1), dim=1)    # batch_size, 1
-        # print(out, jsd_loss)
 
         return out, torch.squeeze(all_r, 3).permute(0, 2, 1), jsd_loss
 
 
-class FramePredict(nn.Module):
+class Ablation(nn.Module):
     def __init__(self, device):
-        super(FramePredict, self).__init__()
-        # encoders
-        pretrain = torch.load('r3d34_K_200ep.pth', map_location='cpu')
-        self.first_n_frames_encoder = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
-        self.first_n_frames_encoder.load_state_dict(pretrain['state_dict'])
-        self.first_n_masks_encoder = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
-        self.first_n_masks_encoder.load_state_dict(pretrain['state_dict'])
-        self.global_context = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
-        self.global_context.load_state_dict(pretrain['state_dict'])
-        self.bert = BertModel.from_pretrained('bert-base-uncased')
-        self.relu = nn.ReLU()
-        self.dropout = nn.Dropout(0.5)
-        self.linear = nn.Linear(2304, 256)
-        self.fc = nn.Linear(256, 1)
-        
-        self.device = device
-
-    def forward(self, inp_decoded_images, images_first_n_frames, masks_first_n_frames, queries):
-        inp_decoded_images = torch.stack(inp_decoded_images)    # seq_len, batch_size, channels, width, height
-        # add first n frames and masks information
-        encoded_first_n_frames = self.first_n_frames_encoder(images_first_n_frames) # batch_size, 1, encoded_feature_size
-        encoded_first_n_masks = self.first_n_masks_encoder(masks_first_n_frames)    # batch_size, 1, encoded_feature_size
-        encoded_global_context = self.global_context(inp_decoded_images.permute(1, 2, 0, 3, 4)) # batch_size, 1, encoded_feature_size
-        # add task type information
-        input_ids = torch.squeeze(queries['input_ids'], dim=1).to(self.device)
-        attention_mask = torch.squeeze(queries['attention_mask'], dim=1).to(self.device)
-        token_type_ids = torch.squeeze(queries['token_type_ids'], dim=1).to(self.device)
-        task_conditioning = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids).last_hidden_state[:,0,:]
-        final_image_features = torch.cat([encoded_first_n_frames, encoded_first_n_masks, encoded_global_context, task_conditioning], dim=1)
-        classification = self.fc(self.relu(self.dropout(self.linear(self.relu(self.dropout(final_image_features))))))
-
-        return classification
-
-
-class InitialPredict(nn.Module):
-    def __init__(self, device):
-        super(InitialPredict, self).__init__()
+        super(Ablation, self).__init__()
         # encoders
         pretrain = torch.load('r3d34_K_200ep.pth', map_location='cpu')
         self.first_n_frames_encoder = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
@@ -266,6 +227,53 @@ class InitialPredict(nn.Module):
         task_conditioning = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids).last_hidden_state[:,0,:]
         final_image_features = torch.cat([encoded_first_n_frames, encoded_first_n_masks, task_conditioning], dim=1)
         classification = self.fc(self.relu(self.dropout(self.linear(self.relu(self.dropout(final_image_features))))))
+
+        return classification
+
+
+class Baseline(nn.Module):
+    def __init__(self, device):
+        super(Baseline, self).__init__()
+        # encoders
+        resnet50 = models.resnet50(pretrained=True)
+        removed = list(resnet50.children())[:-1]
+        self.first_n_frames_encoder = torch.nn.Sequential(*removed)
+        self.first_n_masks_encoder = torch.nn.Sequential(*removed)
+        self.bert = BertModel.from_pretrained('bert-base-uncased')
+        self.relu = nn.ReLU()
+        self.normalize = transforms.Compose([
+            transforms.Normalize(mean=[0.485, 0.456, 0.406],
+                         std=[0.229, 0.224, 0.225])
+        ])
+        self.dropout = nn.Dropout(0.5)
+        self.avgpool = nn.AvgPool1d(3)
+        self.linear1 = nn.Linear(4864, 1024)
+        self.linear2 = nn.Linear(1024, 256)
+        self.fc = nn.Linear(256, 1)
+        
+        self.device = device
+
+    def forward(self, images_first_n_frames, masks_first_n_frames, queries):
+        # add first n frames and masks information
+        B, S, C, W, H = images_first_n_frames.shape
+        images_first_n_frames = images_first_n_frames.reshape(B*S, C, W, H)
+        masks_first_n_frames = masks_first_n_frames.reshape(B*S, C, W, H)
+        encoded_first_n_frames = self.first_n_frames_encoder(self.normalize(images_first_n_frames)) # batch_size * seq_len, channel, width, height
+        encoded_first_n_masks = self.first_n_masks_encoder(self.normalize(masks_first_n_frames))    # batch_size * seq_len, channel, width, height
+        encoded_first_n_frames = encoded_first_n_frames.reshape(B, S, -1)
+        encoded_first_n_masks = encoded_first_n_masks.reshape(B, S, -1)
+        B, S, F = encoded_first_n_frames.shape
+        encoded_first_n_frames = encoded_first_n_frames.permute(0, 2, 1)
+        encoded_first_n_masks = encoded_first_n_masks.permute(0, 2, 1)
+        encoded_first_n_frames = torch.squeeze(self.avgpool(encoded_first_n_frames), dim=2)
+        encoded_first_n_masks = torch.squeeze(self.avgpool(encoded_first_n_masks), dim=2)
+        # add task type information
+        input_ids = torch.squeeze(queries['input_ids'], dim=1).to(self.device)
+        attention_mask = torch.squeeze(queries['attention_mask'], dim=1).to(self.device)
+        token_type_ids = torch.squeeze(queries['token_type_ids'], dim=1).to(self.device)
+        task_conditioning = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids).last_hidden_state[:,0,:]
+        final_image_features = torch.cat([encoded_first_n_frames, encoded_first_n_masks, task_conditioning], dim=1)
+        classification = self.fc(self.relu(self.dropout(self.linear2(self.relu(self.dropout(self.linear1(self.relu(self.dropout(final_image_features)))))))))
 
         return classification
 

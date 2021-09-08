@@ -1,21 +1,21 @@
-task_type: 'contact'
-frame_path: "/home/samson/see-aaai/data/contact/frames"
-mask_path: "/home/samson/see-aaai/data/contact/mask"
-train_label_path: "/home/samson/see-aaai/data/contact/json/train.json"
-val_label_path: "/home/samson/see-aaai/data/contact/json/val.json"
-test_label_path: "/home/samson/see-aaai/data/contact/json/test.json"
-video_path: "/home/samson/see-aaai/data/contact/videos"
-data_path: "/home/samson/see-aaai/data/contact/groundtruth"
+task_type: 'contain'
+frame_path: "/home/samson/see-aaai/data/contain/frames"
+mask_path: "/home/samson/see-aaai/data/contain/mask"
+train_label_path: "/home/samson/see-aaai/data/contain/json/train.json"
+val_label_path: "/home/samson/see-aaai/data/contain/json/val.json"
+test_label_path: "/home/samson/see-aaai/data/contain/json/test.json"
+video_path: "/home/samson/see-aaai/data/contain/videos"
+data_path: "/home/samson/see-aaai/data/contain/groundtruth"
 train_val_test_splits: [0.6, 0.2, 0.2]
 save_path: "experiments"
-save_frames_every: 1
-load_model_path: null
+save_spans: True
+load_model_path: "experiments/2021-09-09 04-42-45 contain train pip/model"
 experiment_type: "test"
-device: "cuda:3"
-model_type: "pip_2"
+device: "cuda:1"
+model_type: "pip"
 
 # hyperparameters
-num_epoch: 30
+num_epoch: 1
 batch_size: 2
 teacher_forcing_prob: 0.1
 first_n_frame_dynamics: 3
@@ -23,6 +23,4 @@ frame_interval: 2
 learning_rate: 0.001
 max_seq_len: 40
 span_num: 3
-span_threshold: 2.7.e-2
-jsd_theta: 0.5
-seed: 1
+seed: 3

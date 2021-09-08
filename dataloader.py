@@ -58,7 +58,7 @@ class Data(Dataset):
         # frame interval
         for i in range(0, len(image_paths), self.frame_interval):
             final_image_paths.append(os.path.join(image_folder, image_paths[i]))
-        if self.model_type == 'pip_3':
+        if self.model_type == 'ablation' or self.model_type == 'baseline':
             final_image_paths = final_image_paths[:self.first_n_frame_dynamics]
         else:
             final_image_paths = final_image_paths[:self.max_seq_len]
