@@ -35,11 +35,13 @@ def get_freq(all_spans, seq_len, first_n_frame_dynamics):
     return freq
 
 
+all_spans_json = 'all_spans.json'
+
 first_n_frame_dynamics = 3
 max_seq_len = 40
 seq_len = max_seq_len - first_n_frame_dynamics
 save_file = "span_distribution.png"
-all_spans = get_span_list(['experiments/2021-09-09 04-42-45 contain train pip/epoch_1/train/all_spans.json'])
+all_spans = get_span_list([all_spans_json])
 
 
 freq = get_freq(all_spans, seq_len, first_n_frame_dynamics)

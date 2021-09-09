@@ -1,9 +1,3 @@
-#!/usr/bin/env python
-# coding: utf-8
-
-# In[1]:
-
-
 import cv2
 import os
 import argparse
@@ -37,12 +31,12 @@ def convert_avi_to_frame(video_path, frame_path):
         print(number)
 
 
-ufc_folder_path = './'
+video_folder_path = './'
 save_frame_path = './'
 
-for video_path in os.listdir(ufc_folder_path):
+for video_path in os.listdir(video_folder_path):
 
-    video_path = os.path.join(ufc_folder_path, video_path)
+    video_path = os.path.join(video_folder_path, video_path)
  
     print("Getting frames from {} and saving to {}...".format(video_path, save_frame_path))
     convert_avi_to_frame(video_path, save_frame_path)

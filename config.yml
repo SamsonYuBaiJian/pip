@@ -1,4 +1,5 @@
 task_type: 'contain'
+<<<<<<< Updated upstream
 frame_path: ""
 mask_path: ""
 train_label_path: ""
@@ -12,6 +13,21 @@ save_spans: True
 load_model_path: ""
 experiment_type: "test"
 device: "cuda:1"
+=======
+frame_path: "data/contain/frames"
+mask_path: "data/contain/mask"
+train_label_path: "data/contain/json/train.json"
+val_label_path: "data/contain/json/val.json"
+test_label_path: "data/contain/json/test.json"
+video_path: "data/contain/videos"
+data_path: "data/contain/groundtruth"
+train_val_test_splits: [0.6, 0.2, 0.2]
+save_path: "experiments"
+save_spans: True
+load_model_path: "experiments/2021-09-09 04-42-45 contain train pip/model"
+experiment_type: "train"
+device: "cuda"
+>>>>>>> Stashed changes
 model_type: "pip"
 
 # hyperparameters
