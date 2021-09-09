@@ -1,15 +1,15 @@
 task_type: 'contain'
-frame_path: "/home/samson/see-aaai/data/contain/frames"
-mask_path: "/home/samson/see-aaai/data/contain/mask"
-train_label_path: "/home/samson/see-aaai/data/contain/json/train.json"
-val_label_path: "/home/samson/see-aaai/data/contain/json/val.json"
-test_label_path: "/home/samson/see-aaai/data/contain/json/test.json"
-video_path: "/home/samson/see-aaai/data/contain/videos"
-data_path: "/home/samson/see-aaai/data/contain/groundtruth"
+frame_path: ""
+mask_path: ""
+train_label_path: ""
+val_label_path: ""
+test_label_path: ""
+video_path: ""
+data_path: ""
 train_val_test_splits: [0.6, 0.2, 0.2]
 save_path: "experiments"
 save_spans: True
-load_model_path: "experiments/2021-09-09 04-42-45 contain train pip/model"
+load_model_path: ""
 experiment_type: "test"
 device: "cuda:1"
 model_type: "pip"
