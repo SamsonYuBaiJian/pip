@@ -1,4 +1,4 @@
-# SPECIAL
+# PIP: Physical Interaction Prediction via Mental Imagery with Span Selection
 ## Running the Code
 `python main.py --config_file config.yml`
 
