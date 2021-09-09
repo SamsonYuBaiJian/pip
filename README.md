@@ -50,7 +50,7 @@ Test
 - Stability: 934 - 1000 (67)
 
 ## Running the Code
-1. Download pretrained 3D ResNet34 `r3d34_K_200ep.pth` weights from https://github.com/kenshohara/3D-ResNets-PyTorch.
+1. Download pretrained 3D ResNet34 weights `r3d34_K_200ep.pth` from https://github.com/kenshohara/3D-ResNets-PyTorch.
 2. Set configurations in `config.yml`.
 3. Run `python main.py --config_file config.yml`.
 
