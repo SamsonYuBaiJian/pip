@@ -20,7 +20,9 @@ Stability: 934-1000 (67)
 
 ## Data Processing
 `python process_data_<tasks>.py --config_file config.yml` to generate the .json
+
 Run `ColorSegmentation.py` to generate the masks.
+
 Run `VideoToFrames.py` to extract the frames.
 
 
