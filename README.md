@@ -26,13 +26,4 @@ Run `ColorSegmentation.py` to generate the masks.
 Run `VideoToFrames.py` to extract the frames.
 
 
-## Tasks
 
-- [X] Vary teacher forcing
-- [X] Add first few teacher forced frames for dynamics learning
-- [X] Add train-val-test splits
-- [X] Fix loss calculations
-- [X] Add mask for object identification/tracking
-- [X] Add accuracy
-- [ ] Inference code
-- [X] Save model according to validation loss
