@@ -1,11 +1,11 @@
 task_type: 'contain'
 frame_path: "data/contain/frames"
 mask_path: "data/contain/mask"
-train_label_path: "data/contain/json/train.json"
-val_label_path: "data/contain/json/val.json"
-test_label_path: "data/contain/json/test.json"
-video_path: "data/contain/videos"
-data_path: "data/contain/groundtruth"
+train_label_path: "./train.json"
+val_label_path: "./val.json"
+test_label_path: "./test.json"
+video_path: "./videos"
+data_path: "./groundtruth"
 train_val_test_splits: [0.6, 0.2, 0.2]
 save_path: "experiments"
 save_spans: True
