@@ -1,6 +1,6 @@
-task_type: 'contain'
-frame_path: "data/contain/frames"
-mask_path: "data/contain/mask"
+task_type: 'contact'
+frame_path: "data/contact/frames"
+mask_path: "data/contact/masks"
 train_label_path: "./train.json"
 val_label_path: "./val.json"
 test_label_path: "./test.json"
@@ -8,14 +8,14 @@ video_path: "./videos"
 data_path: "./groundtruth"
 train_val_test_splits: [0.6, 0.2, 0.2]
 save_path: "experiments"
-save_spans: True
-load_model_path: "experiments/2021-09-09 04-42-45 contain train pip/model"
+save_spans: False
+load_model_path: null
 experiment_type: "train"
 device: "cuda"
 model_type: "pip"
 
 # hyperparameters
-num_epoch: 1
+num_epoch: 20
 batch_size: 2
 teacher_forcing_prob: 0.1
 first_n_frame_dynamics: 3
@@ -23,4 +23,4 @@ frame_interval: 2
 learning_rate: 0.001
 max_seq_len: 40
 span_num: 3
-seed: 3
+seed: 1

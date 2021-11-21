@@ -50,7 +50,7 @@ class Model(nn.Module):
                 images_first_n_frames.append(images_i)
 
             elif i >= first_n_frame_dynamics:
-                if self.model_type == 'ablation' or self.model_type == 'baseline':
+                if self.model_type == 'baseline':
                     break
                 images_i = images[i].to(self.device)
                 for j in range(batch_size):
@@ -58,7 +58,7 @@ class Model(nn.Module):
                     if not teacher_forcing_batch[j]:
                         images_i[j] = decoded_frame[j]
 
-            if self.model_type == 'ablation' or self.model_type == 'baseline':
+            if self.model_type == 'baseline':
                 continue
 
             # encode
@@ -98,7 +98,7 @@ class Model(nn.Module):
             images_first_n_frames = torch.stack(images_first_n_frames).permute(1, 2, 0, 3, 4).to(self.device)   # batch_size, channels, seq_len, height, width
             masks_first_n_frames = torch.stack(masks).permute(1, 2, 0, 3, 4).to(self.device)    # batch_size, 1, seq_len, height, width
             all_r, jsd_loss = None, None
-            classification = self.ablation(images_first_n_frames, masks_first_n_frames.repeat((1, 3, 1, 1, 1)), queries)
+            classification = self.ablation(decoded_images, images_first_n_frames, masks_first_n_frames.repeat((1, 3, 1, 1, 1)), queries)
         elif self.model_type == 'baseline':
             images_first_n_frames = torch.stack(images_first_n_frames).permute(1, 2, 0, 3, 4).to(self.device)   # batch_size, channels, seq_len, height, width
             masks_first_n_frames = torch.stack(masks).permute(1, 2, 0, 3, 4).to(self.device)    # batch_size, 1, seq_len, height, width
@@ -208,6 +208,47 @@ class Ablation(nn.Module):
         self.first_n_frames_encoder.load_state_dict(pretrain['state_dict'])
         self.first_n_masks_encoder = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
         self.first_n_masks_encoder.load_state_dict(pretrain['state_dict'])
+        self.global_context = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
+        self.global_context.load_state_dict(pretrain['state_dict'])
+        self.bert = BertModel.from_pretrained('bert-base-uncased')
+        self.relu = nn.ReLU()
+        self.dropout = nn.Dropout(0.5)
+        self.linear = nn.Linear(2304, 256)
+        self.fc = nn.Linear(256, 1)
+
+        self.device = device
+
+    def forward(self, inp_decoded_images, images_first_n_frames, masks_first_n_frames, queries):
+        inp_decoded_images = torch.stack(inp_decoded_images)  # seq_len, batch_size, channels, width, height
+        # add first n frames and masks information
+        encoded_first_n_frames = self.first_n_frames_encoder(
+            images_first_n_frames)  # batch_size, 1, encoded_feature_size
+        encoded_first_n_masks = self.first_n_masks_encoder(masks_first_n_frames)  # batch_size, 1, encoded_feature_size
+        encoded_global_context = self.global_context(
+            inp_decoded_images.permute(1, 2, 0, 3, 4))  # batch_size, 1, encoded_feature_size
+        # add task type information
+        input_ids = torch.squeeze(queries['input_ids'], dim=1).to(self.device)
+        attention_mask = torch.squeeze(queries['attention_mask'], dim=1).to(self.device)
+        token_type_ids = torch.squeeze(queries['token_type_ids'], dim=1).to(self.device)
+        task_conditioning = self.bert(input_ids=input_ids, attention_mask=attention_mask,
+                                      token_type_ids=token_type_ids).last_hidden_state[:, 0, :]
+        task_conditioning = torch.unsqueeze(task_conditioning, dim=1)
+        final_image_features = torch.cat(
+            [encoded_first_n_frames, encoded_first_n_masks, encoded_global_context, task_conditioning], dim=1)
+        classification = self.fc(self.relu(self.dropout(self.linear(self.relu(self.dropout(final_image_features))))))
+
+        return classification
+
+
+class Baseline(nn.Module):
+    def __init__(self, device):
+        super(Baseline, self).__init__()
+        # encoders
+        pretrain = torch.load('r3d34_K_200ep.pth', map_location='cpu')
+        self.first_n_frames_encoder = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
+        self.first_n_frames_encoder.load_state_dict(pretrain['state_dict'])
+        self.first_n_masks_encoder = ResNet(BasicBlock, [3, 4, 6, 3], get_inplanes(), n_classes=700)
+        self.first_n_masks_encoder.load_state_dict(pretrain['state_dict'])
         self.bert = BertModel.from_pretrained('bert-base-uncased')
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(0.5)
@@ -230,52 +271,6 @@ class Ablation(nn.Module):
 
         return classification
 
-
-class Baseline(nn.Module):
-    def __init__(self, device):
-        super(Baseline, self).__init__()
-        # encoders
-        resnet50 = models.resnet50(pretrained=True)
-        removed = list(resnet50.children())[:-1]
-        self.first_n_frames_encoder = torch.nn.Sequential(*removed)
-        self.first_n_masks_encoder = torch.nn.Sequential(*removed)
-        self.bert = BertModel.from_pretrained('bert-base-uncased')
-        self.relu = nn.ReLU()
-        self.normalize = transforms.Compose([
-            transforms.Normalize(mean=[0.485, 0.456, 0.406],
-                         std=[0.229, 0.224, 0.225])
-        ])
-        self.dropout = nn.Dropout(0.5)
-        self.avgpool = nn.AvgPool1d(3)
-        self.linear1 = nn.Linear(4864, 1024)
-        self.linear2 = nn.Linear(1024, 256)
-        self.fc = nn.Linear(256, 1)
-        
-        self.device = device
-
-    def forward(self, images_first_n_frames, masks_first_n_frames, queries):
-        # add first n frames and masks information
-        B, S, C, W, H = images_first_n_frames.shape
-        images_first_n_frames = images_first_n_frames.reshape(B*S, C, W, H)
-        masks_first_n_frames = masks_first_n_frames.reshape(B*S, C, W, H)
-        encoded_first_n_frames = self.first_n_frames_encoder(self.normalize(images_first_n_frames)) # batch_size * seq_len, channel, width, height
-        encoded_first_n_masks = self.first_n_masks_encoder(self.normalize(masks_first_n_frames))    # batch_size * seq_len, channel, width, height
-        encoded_first_n_frames = encoded_first_n_frames.reshape(B, S, -1)
-        encoded_first_n_masks = encoded_first_n_masks.reshape(B, S, -1)
-        B, S, F = encoded_first_n_frames.shape
-        encoded_first_n_frames = encoded_first_n_frames.permute(0, 2, 1)
-        encoded_first_n_masks = encoded_first_n_masks.permute(0, 2, 1)
-        encoded_first_n_frames = torch.squeeze(self.avgpool(encoded_first_n_frames), dim=2)
-        encoded_first_n_masks = torch.squeeze(self.avgpool(encoded_first_n_masks), dim=2)
-        # add task type information
-        input_ids = torch.squeeze(queries['input_ids'], dim=1).to(self.device)
-        attention_mask = torch.squeeze(queries['attention_mask'], dim=1).to(self.device)
-        token_type_ids = torch.squeeze(queries['token_type_ids'], dim=1).to(self.device)
-        task_conditioning = self.bert(input_ids=input_ids, attention_mask=attention_mask, token_type_ids=token_type_ids).last_hidden_state[:,0,:]
-        final_image_features = torch.cat([encoded_first_n_frames, encoded_first_n_masks, task_conditioning], dim=1)
-        classification = self.fc(self.relu(self.dropout(self.linear2(self.relu(self.dropout(self.linear1(self.relu(self.dropout(final_image_features)))))))))
-
-        return classification
 
 
 class ConvLSTMCell(nn.Module):

@@ -1,4 +1,4 @@
-# PIP: Physical Interaction Prediction via Mental Imagery with Span Selection
+# PIP: Physical Interaction Prediction via Mental Simulation with Span Selection
 
 ## Configurations
 - **task_type**: Task to run experiments for, can be "contact", "contain", "stability" or "combined".
@@ -15,7 +15,7 @@
 - **load_model_path**: Path to load model for testing or fine-tuning.
 - **experiment_type**: Experiment run type, can be "train" or "test.
 - **device**: Set device to "cpu" or "cuda".
-- **model_type**: Set to "pip" for PIP, "ablation" for 3D ResNet and "baseline" for baseline model.
+- **model_type**: Set to "pip" for PIP, "ablation" for PIP w/o SS, "phydnet" for the modified PhyDNet model and "baseline" for baseline model.
 - **num_epoch**: Number of epochs.
 - **batch_size**: Batch size.
 - **teacher_forcing_prob**: Teacher forcing probability, can be from 0 - 1.
@@ -50,7 +50,7 @@ Test
 - Stability: 934 - 1000 (67)
 
 ## Running the Code
-1. Download pretrained 3D ResNet34 weights `r3d34_K_200ep.pth` from https://github.com/kenshohara/3D-ResNets-PyTorch.
+1. Download pretrained 3D ResNet34 weights `r3d34_K_200ep.pth` from https://github.com/kenshohara/3D-ResNets-PyTorch and put the file in the root directory.
 2. Set configurations in `config.yml`.
 3. Run `python main.py --config_file config.yml`.
 
@@ -64,3 +64,7 @@ A generated sequence will be automatically saved at the end of every epoch durin
 2. Train or test PIP, and a file named `all_spans.json` will be produced in the experiment run directory.
 3. Replace the path to the `all_spans.json` in `utils/visualize_span_distribution.py`.
 4. Run `python utils/visualize_span_distribution.py`, and the plot will be saved as `span_distribution.png`.
+
+
+## Acknowledgements
+Parts of our code, specifically the files `constrain_moments.py`, `phydnet_main.py` and `phydnet_model.py`, are adapted from the code from the paper "Disentangling Physical Dynamics from Unknown Factors for UnsupervisedVideo Prediction" at https://github.com/vincent-leguen/PhyDNet. We would like to thank the authors for their well-organised code.
