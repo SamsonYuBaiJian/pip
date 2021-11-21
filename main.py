@@ -137,7 +137,8 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
             temp_train_classification_loss.append(cls_loss.data.item() * retrieved_batch_size)
             if model_type == 'pip' or model_type == 'ablation':
                 temp_train_image_loss.append(0)
-                temp_train_jsd_loss.append(torch.mean(jsd_loss).data.item() * retrieved_batch_size)
+                if model_type == 'pip':
+                    temp_train_jsd_loss.append(torch.mean(jsd_loss).data.item() * retrieved_batch_size)
                 for k, pred_images in enumerate(pred_images_seq):
                     frames_k = frames[k+first_n_frame_dynamics].to(device)
                     pred_images = torch.clamp(pred_images, 0, 1)
@@ -164,13 +165,17 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
                         batch_span_indices.append(span_indices)
                     all_span_list.append(batch_span_indices)
 
-            if model_type == 'pip' or model_type == 'ablation':
+            if model_type == 'pip':
                 print("Epoch {}/{} batch {}/{} training done with cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.".format(i+1, num_epoch, j+1, len(train_dataloader), temp_train_classification_loss[-1] / retrieved_batch_size, train_acc, temp_train_image_loss[-1] / retrieved_batch_size, temp_train_jsd_loss[-1] / retrieved_batch_size))
+            elif model_type == 'ablation':
+                print("Epoch {}/{} batch {}/{} training done with cls loss={}, cls accuracy={}, gen loss={}.".format(i+1, num_epoch, j+1, len(train_dataloader), temp_train_classification_loss[-1] / retrieved_batch_size, train_acc, temp_train_image_loss[-1] / retrieved_batch_size))
             elif model_type == 'baseline':
                 print("Epoch {}/{} batch {}/{} training done with cls loss={}, cls accuracy={}.".format(i+1, num_epoch, j+1, len(train_dataloader), temp_train_classification_loss[-1] / retrieved_batch_size, train_acc))
 
-        if model_type == 'pip' or model_type == 'ablation':
+        if model_type == 'pip':
             print("\nEpoch {}/{} OVERALL train cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.\n".format(i+1, num_epoch, sum(temp_train_classification_loss) / total_cnt, total_num_correct / total_cnt, sum(temp_train_image_loss) / total_cnt, sum(temp_train_jsd_loss) / total_cnt))
+        elif model_type == 'ablation':
+            print("\nEpoch {}/{} OVERALL train cls loss={}, cls accuracy={}, gen loss={}.\n".format(i+1, num_epoch, sum(temp_train_classification_loss) / total_cnt, total_num_correct / total_cnt, sum(temp_train_image_loss) / total_cnt))
         elif model_type == 'baseline':
             print("Epoch {}/{} OVERALL train cls loss={}, cls accuracy={}.\n".format(i+1, num_epoch, sum(temp_train_classification_loss) / total_cnt, total_num_correct / total_cnt))
         stats['train']['cls_loss'].append(sum(temp_train_classification_loss) / total_cnt)
@@ -250,7 +255,8 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
                 
                 if model_type == 'pip' or model_type == 'ablation':
                     temp_val_image_loss.append(0)
-                    temp_val_jsd_loss.append(torch.mean(jsd_loss).data.item() * retrieved_batch_size)
+                    if model_type == 'pip':
+                        temp_val_jsd_loss.append(torch.mean(jsd_loss).data.item() * retrieved_batch_size)
                     for k, pred_images in enumerate(pred_images_seq):
                         frames_k = frames[k+first_n_frame_dynamics].to(device)
                         pred_images = torch.clamp(pred_images, 0, 1)
@@ -271,13 +277,17 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
                             batch_span_indices.append(span_indices)
                         all_span_list.append(batch_span_indices)
                 
-                if model_type == 'pip' or model_type == 'ablation':
+                if model_type == 'pip':
                     print("Epoch {}/{} batch {}/{} validation done with cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.".format(i+1, num_epoch, j+1, len(val_dataloader), temp_val_classification_loss[-1] / retrieved_batch_size, val_acc, temp_val_image_loss[-1] / retrieved_batch_size, temp_val_jsd_loss[-1] / retrieved_batch_size))
+                elif model_type == 'ablation':
+                    print("Epoch {}/{} batch {}/{} validation done with cls loss={}, cls accuracy={}, gen loss={}.".format(i+1, num_epoch, j+1, len(val_dataloader), temp_val_classification_loss[-1] / retrieved_batch_size, val_acc, temp_val_image_loss[-1] / retrieved_batch_size))
                 elif model_type == 'baseline':
                     print("Epoch {}/{} batch {}/{} validation done with cls loss={}, cls accuracy={}.".format(i+1, num_epoch, j+1, len(val_dataloader), temp_val_classification_loss[-1] / retrieved_batch_size, val_acc))
 
         if model_type == 'pip' or model_type == 'ablation':
             print("\nEpoch {}/{} OVERALL validation cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.\n".format(i+1, num_epoch, sum(temp_val_classification_loss) / total_cnt, total_num_correct / total_cnt, sum(temp_val_image_loss) / total_cnt, sum(temp_val_jsd_loss) / total_cnt))
+        elif model_type == 'ablation':
+            print("\nEpoch {}/{} OVERALL validation cls loss={}, cls accuracy={}, gen loss={}.\n".format(i+1, num_epoch, sum(temp_val_classification_loss) / total_cnt, total_num_correct / total_cnt, sum(temp_val_image_loss) / total_cnt))
         elif model_type == 'baseline':
             print("Epoch {}/{} OVERALL validation cls loss={}, cls accuracy={}.\n".format(i+1, num_epoch, sum(temp_val_classification_loss) / total_cnt, total_num_correct / total_cnt))
         stats['val']['cls_loss'].append(sum(temp_val_classification_loss) / total_cnt)
@@ -413,7 +423,8 @@ def test(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path
             temp_test_classification_loss.append(cls_loss.data.item() * retrieved_batch_size)
             if model_type == 'pip' or model_type == 'ablation':
                 temp_test_image_loss.append(0)
-                temp_test_jsd_loss.append(torch.mean(jsd_loss).data.item() * retrieved_batch_size)
+                if model_type == 'pip':
+                    temp_test_jsd_loss.append(torch.mean(jsd_loss).data.item() * retrieved_batch_size)
                 for k, pred_images in enumerate(pred_images_seq):
                     frames_k = frames[k+first_n_frame_dynamics].to(device)
                     pred_images = torch.clamp(pred_images, 0, 1)
@@ -437,11 +448,15 @@ def test(cfg, task_type, frame_path, mask_path, train_label_path, val_label_path
 
             if model_type == 'pip' or model_type == 'ablation':
                 print("Batch {}/{} testing done with cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.".format(j+1, len(test_dataloader), temp_test_classification_loss[-1] / retrieved_batch_size, test_acc, temp_test_image_loss[-1] / retrieved_batch_size, temp_test_jsd_loss[-1] / retrieved_batch_size))
+            elif model_type == 'ablation':
+                print("Batch {}/{} testing done with cls loss={}, cls accuracy={}, gen loss={}.".format(j+1, len(test_dataloader), temp_test_classification_loss[-1] / retrieved_batch_size, test_acc, temp_test_image_loss[-1] / retrieved_batch_size))
             elif model_type == 'baseline':
                 print("Batch {}/{} testing done with cls loss={}, cls accuracy={}.".format(j+1, len(test_dataloader), temp_test_classification_loss[-1] / retrieved_batch_size, test_acc))
 
-        if model_type == 'pip' or model_type == 'ablation':
+        if model_type == 'pip':
             print("OVERALL test cls loss={}, cls accuracy={}, gen loss={}, jsd loss={}.\n".format(sum(temp_test_classification_loss) / total_cnt, total_num_correct / total_cnt, sum(temp_test_image_loss) / total_cnt, sum(temp_test_jsd_loss) / total_cnt))
+        elif model_type == 'ablation':
+            print("OVERALL test cls loss={}, cls accuracy={}, gen loss={}.\n".format(sum(temp_test_classification_loss) / total_cnt, total_num_correct / total_cnt, sum(temp_test_image_loss) / total_cnt))
         elif model_type == 'baseline':
             print("OVERALL test cls loss={}, cls accuracy={}.\n".format(sum(temp_test_classification_loss) / total_cnt, total_num_correct / total_cnt))
         stats['test']['cls_loss'].append(sum(temp_test_classification_loss) / total_cnt)

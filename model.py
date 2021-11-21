@@ -232,7 +232,7 @@ class Ablation(nn.Module):
         token_type_ids = torch.squeeze(queries['token_type_ids'], dim=1).to(self.device)
         task_conditioning = self.bert(input_ids=input_ids, attention_mask=attention_mask,
                                       token_type_ids=token_type_ids).last_hidden_state[:, 0, :]
-        task_conditioning = torch.unsqueeze(task_conditioning, dim=1)
+        # task_conditioning = torch.unsqueeze(task_conditioning, dim=1)
         final_image_features = torch.cat(
             [encoded_first_n_frames, encoded_first_n_masks, encoded_global_context, task_conditioning], dim=1)
         classification = self.fc(self.relu(self.dropout(self.linear(self.relu(self.dropout(final_image_features))))))
