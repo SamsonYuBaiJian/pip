@@ -131,7 +131,7 @@ def train(cfg, task_type, frame_path, mask_path, train_label_path, val_label_pat
             cls_loss = bce_logits_loss(pred_labels, labels)
             if model_type == 'pip':
                 loss = cls_loss + torch.mean(jsd_loss)
-            elif model_type == 'ablation' or model_type == 'baseline'
+            elif model_type == 'ablation' or model_type == 'baseline':
                 loss = cls_loss
 
             temp_train_classification_loss.append(cls_loss.data.item() * retrieved_batch_size)
