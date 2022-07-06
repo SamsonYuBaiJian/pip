@@ -66,5 +66,5 @@ A generated sequence will be automatically saved at the end of every epoch durin
 4. Run `python utils/visualize_span_distribution.py`, and the plot will be saved as `span_distribution.png`.
 
 
-## Acknowledgements
+## Acknowledgments
 Parts of our code, specifically the files `constrain_moments.py`, `phydnet_main.py` and `phydnet_model.py`, are adapted from the code from the paper "Disentangling Physical Dynamics from Unknown Factors for UnsupervisedVideo Prediction" at https://github.com/vincent-leguen/PhyDNet. We would like to thank the authors for their well-organised code.
